@@ -1,0 +1,151 @@
+{
+  "ufvks": [
+    {
+      "id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "owner": "t1SxCamD9V2m3B86PU4r6SFM6KGCjrzCBig",
+      "label": "E2E test key",
+      "ufvk": "uview1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+      "primary": true,
+      "created_at": 1779777004924
+    }
+  ],
+  "transactions": [
+    {
+      "txid": "f3a1c2d4e5f6789a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a",
+      "direction": "in",
+      "amount_zec": 12500,
+      "counterparty": "u1grantsource…rotreg6",
+      "memo": "Q2 2026 grant — community education program",
+      "block_height": 2750120,
+      "id": "94cb5728-40d7-4564-bf3c-3fdacf261b6d",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1777357804924
+    },
+    {
+      "txid": "a4b5c6d7e8f90a1b2c3d4e5f607182930a4b5c6d7e8f90a1b2c3d4e5f6071829",
+      "direction": "out",
+      "amount_zec": -2500,
+      "counterparty": "u1contractorAnnabel…fk21x",
+      "memo": "May invoice — content writing (4 articles)",
+      "block_height": 2751402,
+      "id": "c38d9e11-9990-43dd-8dde-5b2e1d77a3e0",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1777876204924
+    },
+    {
+      "txid": "b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a",
+      "direction": "out",
+      "amount_zec": -1800,
+      "counterparty": "u1contractorBoaz…m9p4q",
+      "memo": "May invoice — design",
+      "block_height": 2751988,
+      "id": "4dad41bd-2ff4-4dc0-8beb-77e1dbf8f065",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1778049004924
+    },
+    {
+      "txid": "c2d3e4f50617283940a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a1",
+      "direction": "out",
+      "amount_zec": -340,
+      "counterparty": "u1conferenceFee…wp8k",
+      "memo": "ZconVII conference ticket (D. Patel)",
+      "block_height": 2753201,
+      "id": "c6aebc30-db14-47e2-a0d6-174bd573c520",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1778567404924
+    },
+    {
+      "txid": "d3e4f50617283940a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a1b2",
+      "direction": "out",
+      "amount_zec": -120,
+      "counterparty": "u1saaSToolname…h4j7l",
+      "memo": "Notion team plan — June",
+      "block_height": 2753990,
+      "id": "d9c0123a-9243-4797-aef1-17e555fce419",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1778740204924
+    },
+    {
+      "txid": "e4f50617283940a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a1b2c3",
+      "direction": "in",
+      "amount_zec": 75,
+      "counterparty": "u1eventRefund…q3w2e",
+      "memo": "Unused conference workshop — refund",
+      "block_height": 2754870,
+      "id": "78f322a8-791e-41c8-8828-00d098108b53",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1778999404924
+    },
+    {
+      "txid": "f50617283940a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a1b2c3d4",
+      "direction": "out",
+      "amount_zec": -2200,
+      "counterparty": "u1contractorAnnabel…fk21x",
+      "memo": "June invoice — content writing + editing pass",
+      "block_height": 2755510,
+      "id": "ee40990d-563f-4448-ad19-b3a21b748d3b",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1779258604924
+    },
+    {
+      "txid": "a50617283940a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a1b2c3d5",
+      "direction": "out",
+      "amount_zec": -50,
+      "counterparty": "u1domainRegistrar…ee99",
+      "memo": "Domain renewal — zechub.org",
+      "block_height": 2755820,
+      "id": "2b8c2bca-34b5-40b6-a603-b2df26949ca5",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1779345004924
+    },
+    {
+      "txid": "b50617283940a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a1b2c3d6",
+      "direction": "out",
+      "amount_zec": -800,
+      "counterparty": "u1internalTreasury…sub4",
+      "memo": "Internal: ops sub-account top-up",
+      "block_height": 2756001,
+      "id": "9fc2a629-94d8-460a-9865-cb39bf4cf4ff",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1779517804924
+    },
+    {
+      "txid": "c50617283940a5b6c7d8e9f0a1b2c3d4e5f061728394a5b6c7d8e9f0a1b2c3d7",
+      "direction": "in",
+      "amount_zec": 50,
+      "counterparty": "u1communityDonor…xq77",
+      "memo": "Donation — thanks for the wallets explainer!",
+      "block_height": 2756180,
+      "id": "d3d59e48-f913-4a3f-9ff1-4b533c22f5eb",
+      "ufvk_id": "d7fa9da6-841e-4f07-83a8-8dac7bf1cec4",
+      "timestamp": 1779604204924
+    }
+  ],
+  "team": [
+    {
+      "address": "t1SxCamD9V2m3B86PU4r6SFM6KGCjrzCBig",
+      "role": "admin",
+      "added_by": "self",
+      "added_at": 1779777004912
+    },
+    {
+      "address": "snap:b0304e793f35ce628f7386972b75735e",
+      "role": "viewer",
+      "added_by": "auto",
+      "added_at": 1779777005652
+    },
+    {
+      "address": "snap:c9c7a8028654d19ba8ce5b58226b16f8",
+      "role": "viewer",
+      "added_by": "auto",
+      "added_at": 1779777006667
+    },
+    {
+      "address": "snap:dde2d9a8520cacb3d68841c9800ce305",
+      "role": "viewer",
+      "added_by": "auto",
+      "added_at": 1779779957836
+    }
+  ],
+  "_seeded": true
+}
