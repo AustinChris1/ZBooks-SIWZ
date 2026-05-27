@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { addKey, ensureMember, listKeys } from "./db";
 import { inspectUfvk } from "./ufvk";
 
@@ -71,10 +71,25 @@ export function validateSnapCredentials(creds: SnapCredentials): { ok: true } | 
 
 /**
  * Compute the synthetic "address" that represents a Snap-authenticated
- * user across the rest of ZBooks. Keeps the team table, audit fields,
- * and session shape uniform between SIWZ and Snap users.
+ * user across the rest of ZBooks.
+ *
+ * Preference order:
+ *   1. UFVK hash, when a real UFVK is present. The UFVK is stable
+ *      across MetaMask reinstalls / Snap reprovisioning because it's
+ *      derived from the wallet's seed. Using its hash means the same
+ *      user keeps the same identity (team role, audit history, key
+ *      ownership) regardless of which fingerprint MetaMask hands back
+ *      this session. This is also the SAME identity scheme the memo-
+ *      signin path uses for UFVK-bound sessions, so a user who signs
+ *      in once via Snap and once via memo-with-UFVK is one person.
+ *   2. Snap fingerprint, when UFVK is missing (e.g. anonymous memo
+ *      sessions that ride this envelope path). Still snap-prefixed so
+ *      legacy team entries created from fingerprints don't change.
  */
-export function snapIdentityFor(fingerprint: string): string {
+export function snapIdentityFor(fingerprint: string, ufvk?: string): string {
+  if (ufvk && !ufvk.startsWith("anon:")) {
+    return `anon:${createHash("sha256").update(ufvk).digest("hex").slice(0, 32)}`;
+  }
   return `snap:${fingerprint.slice(0, 32)}`;
 }
 
@@ -90,7 +105,7 @@ export function onSnapAuthSuccess(
   creds: SnapCredentials,
   label = "MetaMask Zcash Snap",
 ): { identity: string } {
-  const identity = snapIdentityFor(creds.fingerprint);
+  const identity = snapIdentityFor(creds.fingerprint, creds.ufvk);
   ensureMember(identity);
   // Skip UFVK auto-import for anonymous memo-challenge sessions — the
   // "ufvk" field there is a synthetic `anon:<hex>` identity, not a real

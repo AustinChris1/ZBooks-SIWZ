@@ -87,7 +87,7 @@ export function SignInPanel() {
 
       {flow === "memo" && <MemoSignIn />}
       {flow === "siwz" && <SiwzClassicPanel />}
-      {flow === "snap" && <SnapPanel />}
+      {flow === "snap" && <SnapPanel onUseDifferentWallet={() => setFlow("siwz")} />}
     </div>
   );
 }
@@ -130,7 +130,7 @@ function SiwzClassicPanel() {
   );
 }
 
-function SnapPanel() {
+function SnapPanel({ onUseDifferentWallet }: { onUseDifferentWallet?: () => void }) {
   const router = useRouter();
   return (
     <div className="flex flex-col gap-3">
@@ -146,6 +146,7 @@ function SnapPanel() {
         uri={typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}
         network={NETWORK}
         enableSnap
+        onUseDifferentWallet={onUseDifferentWallet}
         getNonce={async () => {
           const res = await fetch("/api/siwz/nonce", { cache: "no-store" });
           const json: { nonce: string; token: string } = await res.json();

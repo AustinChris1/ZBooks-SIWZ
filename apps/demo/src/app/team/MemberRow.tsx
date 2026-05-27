@@ -2,7 +2,8 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Role, TeamMember } from "@/lib/db";
+import type { Role, TeamMember } from "@/lib/types";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 export function MemberRow({
   m,
@@ -15,6 +16,7 @@ export function MemberRow({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const { confirm } = useConfirm();
 
   return (
     <li className="rounded-lg border border-black/10 dark:border-white/10 p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -51,10 +53,16 @@ export function MemberRow({
               <option value="admin">Admin</option>
             </select>
             <button
-              className="text-xs rounded-md border border-red-600/30 text-red-600 px-2 py-1"
+              className="text-xs rounded-md border border-red-300 dark:border-red-900/60 text-red-600 dark:text-red-400 px-2 py-1 hover:bg-red-50 dark:hover:bg-red-950/40"
               disabled={isPending}
-              onClick={() => {
-                if (!confirm(`Remove ${m.address.slice(0, 12)}… from the team?`)) return;
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Remove team member?",
+                  body: `${m.address} will lose access on their next sign-in. They can re-join if any admin re-invites them.`,
+                  confirmLabel: "Remove",
+                  tone: "danger",
+                });
+                if (!ok) return;
                 startTransition(async () => {
                   await fetch(`/api/team/${encodeURIComponent(m.address)}`, { method: "DELETE" });
                   router.refresh();

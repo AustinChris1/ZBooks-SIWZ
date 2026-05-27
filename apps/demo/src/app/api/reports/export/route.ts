@@ -1,20 +1,31 @@
 import { NextResponse } from "next/server";
 import { listTransactions } from "@/lib/db";
-import { transactionsCsv } from "@/lib/reports";
+import { filterByMonthRange, transactionsCsv } from "@/lib/reports";
 import { requireRole } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   const auth = await requireRole("admin", "treasurer", "viewer");
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
 
-  const csv = transactionsCsv(listTransactions());
-  const today = new Date().toISOString().slice(0, 10);
+  const url = new URL(req.url);
+  // Accept only YYYY-MM. Anything else is dropped to keep the file name
+  // predictable and the filter unambiguous.
+  const valid = (s: string | null) => (s && /^\d{4}-\d{2}$/.test(s) ? s : undefined);
+  const from = valid(url.searchParams.get("from"));
+  const to = valid(url.searchParams.get("to"));
+
+  const filtered = filterByMonthRange(listTransactions(), from, to);
+  const csv = transactionsCsv(filtered);
+
+  const stamp = from || to
+    ? `${from ?? "start"}_${to ?? "now"}`
+    : new Date().toISOString().slice(0, 10);
   return new NextResponse(csv, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="zbooks-${today}.csv"`,
+      "content-disposition": `attachment; filename="zbooks-${stamp}.csv"`,
     },
   });
 }

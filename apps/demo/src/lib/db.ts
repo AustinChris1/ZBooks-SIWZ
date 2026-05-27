@@ -1,7 +1,16 @@
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { SEED_TRANSACTIONS } from "./seed";
+import {
+  CATEGORY_LABEL,
+  type Category,
+  type Counterparty,
+  type Role,
+  type SyncStatus,
+  type TeamMember,
+  type Transaction,
+  type Ufvk,
+} from "./types";
 
 /**
  * Tiny JSON-file store for ZBooks. Replace with Postgres in production —
@@ -10,90 +19,53 @@ import { SEED_TRANSACTIONS } from "./seed";
  *
  * Atomic-ish write: write to a tmp file then rename. Same-directory rename
  * on NTFS doesn't expose a partial file to concurrent readers.
+ *
+ * Types + CATEGORY_LABEL live in ./types so client components can
+ * import them without dragging node:fs / node:crypto into the browser
+ * bundle. Re-exported here for backwards-compatibility of server code.
  */
+export {
+  CATEGORY_LABEL,
+};
+export type {
+  Category,
+  Counterparty,
+  Role,
+  SyncStatus,
+  TeamMember,
+  Transaction,
+  Ufvk,
+};
 
 const DATA_DIR = join(process.cwd(), "data");
 const DB_PATH = process.env.DATA_PATH ?? join(DATA_DIR, "zbooks.json");
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
-// ---------- types ----------
-
-export type Role = "admin" | "treasurer" | "viewer";
-
-export type Category =
-  | "grant_payout"
-  | "contractor"
-  | "expense"
-  | "reimbursement"
-  | "refund"
-  | "internal_transfer"
-  | "income"
-  | "other";
-
-export const CATEGORY_LABEL: Record<Category, string> = {
-  grant_payout: "Grant payout",
-  contractor: "Contractor",
-  expense: "Expense",
-  reimbursement: "Reimbursement",
-  refund: "Refund",
-  internal_transfer: "Internal transfer",
-  income: "Income",
-  other: "Other / unclassified",
-};
-
-export interface Ufvk {
-  id: string;
-  owner: string;     // address that added it
-  label: string;
-  ufvk: string;
-  primary: boolean;
-  created_at: number;
-}
-
-export interface Transaction {
-  id: string;
-  ufvk_id: string;
-  txid: string;
-  direction: "in" | "out";
-  amount_zec: number;
-  counterparty?: string;
-  memo?: string;
-  timestamp: number;
-  block_height?: number;
-  tag?: Category;
-  notes?: string;
-  tagged_by?: string;
-  tagged_at?: number;
-}
-
-export interface TeamMember {
-  address: string;
-  role: Role;
-  added_by: string;
-  added_at: number;
-}
-
 interface FileShape {
   ufvks: Ufvk[];
   transactions: Transaction[];
   team: TeamMember[];
-  _seeded: boolean;
+  counterparties: Counterparty[];
 }
 
 // ---------- read/write ----------
 
-const EMPTY: FileShape = { ufvks: [], transactions: [], team: [], _seeded: false };
+const EMPTY: FileShape = { ufvks: [], transactions: [], team: [], counterparties: [] };
 
 function read(): FileShape {
   if (!existsSync(DB_PATH)) return { ...EMPTY };
   try {
     const parsed = JSON.parse(readFileSync(DB_PATH, "utf8")) as Partial<FileShape>;
     return {
-      ufvks: parsed.ufvks ?? [],
+      ufvks: (parsed.ufvks ?? []).map((k) => ({
+        ...k,
+        // Backfill sync_status for rows persisted before the column existed.
+        sync_status: (k.sync_status ?? "idle") as SyncStatus,
+      })),
       transactions: parsed.transactions ?? [],
       team: parsed.team ?? [],
-      _seeded: parsed._seeded ?? false,
+      counterparties: parsed.counterparties ?? [],
     };
   } catch {
     return { ...EMPTY };
@@ -167,7 +139,12 @@ export function listKeys(): Ufvk[] {
   return [...read().ufvks].sort((a, b) => a.created_at - b.created_at);
 }
 
-export function addKey(input: { owner: string; label: string; ufvk: string }): Ufvk {
+export function addKey(input: {
+  owner: string;
+  label: string;
+  ufvk: string;
+  birthday?: number;
+}): Ufvk {
   const state = read();
   const id = randomUUID();
   const key: Ufvk = {
@@ -177,27 +154,27 @@ export function addKey(input: { owner: string; label: string; ufvk: string }): U
     ufvk: input.ufvk.trim(),
     primary: state.ufvks.length === 0,
     created_at: Date.now(),
+    sync_status: "idle",
+    ...(Number.isFinite(input.birthday) ? { birthday: input.birthday } : {}),
   };
   state.ufvks.push(key);
-
-  // Seed sample transactions for the first key so the demo has something
-  // to show without lightwalletd integration.
-  if (!state._seeded) {
-    const now = Date.now();
-    for (const t of SEED_TRANSACTIONS) {
-      state.transactions.push({
-        ...t,
-        id: randomUUID(),
-        ufvk_id: id,
-        timestamp: now - t.relativeAgeMs,
-        // strip the relativeAgeMs synthetic field
-        ...{ relativeAgeMs: undefined as unknown as number },
-      } as Transaction);
-    }
-    state._seeded = true;
-  }
   write(state);
   return key;
+}
+
+export function getKey(id: string): Ufvk | undefined {
+  return read().ufvks.find((k) => k.id === id);
+}
+
+export function updateKeySyncStatus(
+  id: string,
+  patch: Partial<Pick<Ufvk, "sync_status" | "last_synced_at" | "last_synced_block" | "last_sync_error" | "last_tx_count" | "last_chain_tip" | "wallet_birthday">>,
+): void {
+  const state = read();
+  const k = state.ufvks.find((x) => x.id === id);
+  if (!k) return;
+  Object.assign(k, patch);
+  write(state);
 }
 
 export function removeKey(id: string): void {
@@ -234,4 +211,119 @@ export function tagTransaction(id: string, input: {
   t.tagged_at = Date.now();
   write(state);
   return t;
+}
+
+/**
+ * Insert or update transactions for a given UFVK from a sync result.
+ *
+ * Dedup key is (ufvk_id, txid). Existing rows keep their tag / notes /
+ * id (so a re-sync doesn't clobber user-applied categorisation) but
+ * pick up any newly-decrypted fields (memo / counterparty / block
+ * height) from the latest sync.
+ *
+ * Returns `{inserted, updated}` counts so the sync layer can surface
+ * what changed in the UI.
+ */
+export function upsertTransactions(
+  ufvkId: string,
+  incoming: Array<{
+    txid: string;
+    direction: "in" | "out";
+    amount_zec: number;
+    counterparty?: string;
+    memo?: string;
+    timestamp: number;
+    block_height?: number;
+  }>,
+): { inserted: number; updated: number } {
+  const state = read();
+  let inserted = 0;
+  let updated = 0;
+  for (const incoming_tx of incoming) {
+    const existing = state.transactions.find(
+      (t) => t.ufvk_id === ufvkId && t.txid === incoming_tx.txid,
+    );
+    if (existing) {
+      existing.direction = incoming_tx.direction;
+      existing.amount_zec = incoming_tx.amount_zec;
+      existing.timestamp = incoming_tx.timestamp;
+      if (incoming_tx.counterparty !== undefined) existing.counterparty = incoming_tx.counterparty;
+      if (incoming_tx.memo !== undefined) existing.memo = incoming_tx.memo;
+      if (incoming_tx.block_height !== undefined) existing.block_height = incoming_tx.block_height;
+      updated++;
+    } else {
+      state.transactions.push({
+        id: randomUUID(),
+        ufvk_id: ufvkId,
+        ...incoming_tx,
+      });
+      inserted++;
+    }
+  }
+  write(state);
+  return { inserted, updated };
+}
+
+// ---------- counterparties ----------
+
+export function listCounterparties(): Counterparty[] {
+  return [...read().counterparties].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+export function getCounterparty(address: string): Counterparty | undefined {
+  return read().counterparties.find((c) => c.address === address);
+}
+
+/**
+ * Insert or update the label for an address. Empty `label` removes the
+ * mapping (handy for "untag" without a separate endpoint).
+ */
+export function upsertCounterparty(input: {
+  address: string;
+  label: string;
+  notes?: string;
+  by: string;
+}): Counterparty | null {
+  const state = read();
+  const address = input.address.trim();
+  const label = input.label.trim();
+  if (!address) throw new Error("address required");
+
+  const idx = state.counterparties.findIndex((c) => c.address === address);
+  if (!label) {
+    // Empty label means "forget this mapping".
+    if (idx >= 0) {
+      state.counterparties.splice(idx, 1);
+      write(state);
+    }
+    return null;
+  }
+
+  if (idx >= 0) {
+    const existing = state.counterparties[idx];
+    existing.label = label;
+    if (input.notes !== undefined) existing.notes = input.notes || undefined;
+    existing.updated_at = Date.now();
+    write(state);
+    return existing;
+  }
+
+  const made: Counterparty = {
+    address,
+    label,
+    notes: input.notes?.trim() || undefined,
+    added_by: input.by,
+    added_at: Date.now(),
+  };
+  state.counterparties.push(made);
+  write(state);
+  return made;
+}
+
+/**
+ * Build a single { address → label } map. Cheaper than calling
+ * getCounterparty in a loop when rendering lists.
+ */
+export function counterpartyLabelMap(): Map<string, string> {
+  return new Map(read().counterparties.map((c) => [c.address, c.label]));
 }

@@ -2,18 +2,22 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Category, Transaction } from "@/lib/db";
+import { motion } from "framer-motion";
+import type { Category, Transaction } from "@/lib/types";
+import { CounterpartyLabel } from "@/components/CounterpartyLabel";
 
 export function TxRow({
   t,
   keyLabel,
   editable,
   categories,
+  counterpartyLabel,
 }: {
   t: Transaction;
   keyLabel: string;
   editable: boolean;
   categories: { value: string; label: string }[];
+  counterpartyLabel?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -40,16 +44,22 @@ export function TxRow({
   };
 
   return (
-    <tr className="border-t border-black/5 dark:border-white/10 align-top">
-      <td className="py-2 pr-3 whitespace-nowrap text-xs opacity-70">
+    <motion.tr
+      layout
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18 }}
+      className="border-t border-neutral-100 dark:border-neutral-800/80 align-top"
+    >
+      <td className="py-2 pr-3 whitespace-nowrap text-xs text-neutral-500">
         {new Date(t.timestamp).toLocaleDateString()}
       </td>
       <td className="py-2 pr-3">
         <span
           className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
             t.direction === "in"
-              ? "bg-green-500/20 text-green-700 dark:text-green-300"
-              : "bg-red-500/20 text-red-700 dark:text-red-300"
+              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              : "bg-red-500/15 text-red-700 dark:text-red-300"
           }`}
         >
           {t.direction === "in" ? "IN" : "OUT"}
@@ -57,23 +67,31 @@ export function TxRow({
       </td>
       <td
         className={`py-2 pr-3 text-right font-mono ${
-          t.amount_zec >= 0 ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"
+          t.amount_zec >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"
         }`}
       >
         {t.amount_zec >= 0 ? "+" : ""}
         {t.amount_zec.toLocaleString(undefined, { maximumFractionDigits: 8 })}
       </td>
-      <td className="py-2 pr-3 max-w-[20rem]">
-        <div className="line-clamp-2 text-sm">{t.memo ?? <span className="opacity-50">—</span>}</div>
+      <td className="py-2 pr-3 max-w-[22rem]">
+        <div className="line-clamp-2 text-sm">
+          {t.memo ?? <span className="text-neutral-400">no memo</span>}
+        </div>
         {t.counterparty && (
-          <div className="font-mono text-[11px] opacity-50 truncate">{t.counterparty}</div>
+          <div className="mt-0.5">
+            <CounterpartyLabel
+              address={t.counterparty}
+              label={counterpartyLabel}
+              editable={editable}
+            />
+          </div>
         )}
       </td>
-      <td className="py-2 pr-3 text-xs opacity-70">{keyLabel}</td>
+      <td className="py-2 pr-3 text-xs text-neutral-500">{keyLabel}</td>
       <td className="py-2 pr-3">
         {editable ? (
           <select
-            className="bg-transparent border border-black/15 dark:border-white/15 rounded px-1.5 py-1 text-xs"
+            className="bg-transparent border border-neutral-300 dark:border-neutral-700 rounded px-1.5 py-1 text-xs"
             value={tag}
             disabled={isPending}
             onChange={(e) => {
@@ -81,20 +99,20 @@ export function TxRow({
               submit({ tag: e.target.value as Category | "" });
             }}
           >
-            <option value="">— untagged —</option>
+            <option value="">untagged</option>
             {categories.map((c) => (
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </select>
         ) : (
-          <span className="text-xs opacity-70">{t.tag ?? "—"}</span>
+          <span className="text-xs text-neutral-500">{t.tag ?? "—"}</span>
         )}
       </td>
       <td className="py-2 pr-3">
         {editable ? (
           <input
-            className="bg-transparent border border-black/10 dark:border-white/15 rounded px-1.5 py-1 text-xs w-40"
-            placeholder="add a note…"
+            className="bg-transparent border border-neutral-300 dark:border-neutral-700 rounded px-1.5 py-1 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-zcash-yellow"
+            placeholder="note…"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             onBlur={() => {
@@ -102,10 +120,10 @@ export function TxRow({
             }}
           />
         ) : (
-          <span className="text-xs opacity-70">{t.notes ?? "—"}</span>
+          <span className="text-xs text-neutral-500">{t.notes ?? "—"}</span>
         )}
-        {savedHint && <span className="ml-2 text-[10px] text-green-600">saved</span>}
+        {savedHint && <span className="ml-2 text-[10px] text-emerald-600">saved</span>}
       </td>
-    </tr>
+    </motion.tr>
   );
 }

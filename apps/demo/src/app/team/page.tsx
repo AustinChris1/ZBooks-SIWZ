@@ -16,22 +16,33 @@ export default async function TeamPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Team</h1>
-        <div className="text-xs opacity-60">role: {user.role}</div>
+        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
+        <div className="text-xs text-neutral-500">role: {user.role}</div>
       </div>
 
-      <p className="text-sm opacity-80 max-w-2xl">
-        Roles control what each address can do:
-      </p>
-      <ul className="text-sm opacity-80 ml-4 list-disc">
-        <li><strong>Admin</strong> — manage team, manage keys, tag transactions, view reports.</li>
-        <li><strong>Treasurer</strong> — manage keys, tag transactions, view reports.</li>
-        <li><strong>Viewer</strong> — view reports only.</li>
-      </ul>
-      <p className="text-sm opacity-70">
-        The first address to sign in becomes admin automatically. New
-        sign-ins join as viewers and can be promoted from this page.
-      </p>
+      <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/40 p-5 max-w-2xl">
+        <p className="text-sm text-neutral-700 dark:text-neutral-200 font-medium mb-3">
+          Roles control what each address can do.
+        </p>
+        <dl className="grid sm:grid-cols-3 gap-3 text-sm">
+          <RoleCard
+            name="Admin"
+            scope="Manage team, manage keys, tag transactions, view reports."
+          />
+          <RoleCard
+            name="Treasurer"
+            scope="Manage keys, tag transactions, view reports."
+          />
+          <RoleCard
+            name="Viewer"
+            scope="View reports only."
+          />
+        </dl>
+        <p className="text-xs text-neutral-500 mt-3 leading-relaxed">
+          The first address to sign in becomes admin automatically. New
+          sign-ins join as viewers and can be promoted from this page.
+        </p>
+      </div>
 
       {canManage ? <AddMemberForm /> : null}
 
@@ -45,6 +56,15 @@ export default async function TeamPage() {
           />
         ))}
       </ul>
+    </div>
+  );
+}
+
+function RoleCard({ name, scope }: { name: string; scope: string }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
+      <dt className="font-semibold text-sm tracking-tight">{name}</dt>
+      <dd className="text-xs text-neutral-600 dark:text-neutral-400 mt-1 leading-relaxed">{scope}</dd>
     </div>
   );
 }

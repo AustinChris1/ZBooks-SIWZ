@@ -12,7 +12,7 @@ export function AddMemberForm() {
 
   return (
     <form
-      className="rounded-lg border border-black/10 dark:border-white/10 p-4 flex flex-col sm:flex-row gap-3"
+      className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/40 p-4 flex flex-col sm:flex-row gap-3"
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
@@ -34,13 +34,13 @@ export function AddMemberForm() {
       }}
     >
       <input
-        className="flex-1 rounded-md border border-black/15 dark:border-white/15 bg-transparent px-2 py-1.5 font-mono text-sm"
+        className="flex-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2.5 py-1.5 font-mono text-sm focus:outline-none focus:ring-1 focus:ring-zcash-yellow"
         placeholder="t1… or zs… or u1…"
         value={address}
         onChange={(e) => setAddress(e.target.value)}
       />
       <select
-        className="rounded-md border border-black/15 dark:border-white/15 bg-transparent px-2 py-1.5 text-sm"
+        className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2.5 py-1.5 text-sm"
         value={role}
         onChange={(e) => setRole(e.target.value as "admin" | "treasurer" | "viewer")}
       >
@@ -50,12 +50,12 @@ export function AddMemberForm() {
       </select>
       <button
         type="submit"
-        className="rounded-md bg-zcash-yellow text-zcash-dark font-semibold px-3 py-1.5 text-sm disabled:opacity-50"
+        className="rounded-md bg-zcash-yellow text-zcash-dark font-semibold px-3.5 py-1.5 text-sm hover:bg-yellow-400 transition-colors disabled:opacity-50"
         disabled={isPending || !address.trim()}
       >
         {isPending ? "Adding…" : "Add"}
       </button>
-      {error && <div className="text-sm text-red-600 sm:basis-full">{error}</div>}
+      {error && <div className="text-sm text-red-600 dark:text-red-400 sm:basis-full">{error}</div>}
     </form>
   );
 }
