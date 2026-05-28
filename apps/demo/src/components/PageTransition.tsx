@@ -3,14 +3,8 @@
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 
-/**
- * Light enter-only page transition. Keyed on pathname so each route
- * gets a clean fade-in. We deliberately do NOT use AnimatePresence here
- * — its `mode="wait"` holds the old page's exit animation BEFORE
- * rendering the new one, which produces a blank flash whenever the new
- * server component takes any time to stream in. Without it, Next.js
- * swaps content as soon as it's ready and we just animate the entry.
- */
+// Enter-only fade. AnimatePresence's mode="wait" would blank the page
+// during server-component streams, so we don't use it here.
 export function PageTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   return (

@@ -8,7 +8,6 @@ interface ConfirmOptions {
   body?: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  /** "danger" surfaces a red confirm button. "default" uses the brand colour. */
   tone?: "default" | "danger";
 }
 
@@ -18,16 +17,7 @@ interface ConfirmContextValue {
 
 const ConfirmContext = createContext<ConfirmContextValue | null>(null);
 
-/**
- * Hook-style confirm dialog. Replaces `window.confirm()` so the prompt
- * isn't blocked by browsers (Safari, brave-mode), and animates in/out
- * to match the rest of the UI. Usage:
- *
- *   const { confirm } = useConfirm();
- *   if (!(await confirm({ title: "Remove key?", tone: "danger" }))) return;
- *
- * The single shared dialog is mounted by ConfirmProvider at the app root.
- */
+// Promise-based replacement for window.confirm — animated, not blocked by Safari.
 export function useConfirm(): ConfirmContextValue {
   const ctx = useContext(ConfirmContext);
   if (!ctx) throw new Error("useConfirm called outside ConfirmProvider");

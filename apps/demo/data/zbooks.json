@@ -9,9 +9,8 @@
       "created_at": 1779871796927,
       "sync_status": "ok",
       "birthday": 2800000,
-      "last_synced_at": 1779872817625,
-      "last_chain_tip": 3356827,
-      "last_tx_count": 3
+      "last_synced_at": 1779889745750,
+      "last_tx_count": 0
     }
   ],
   "transactions": [

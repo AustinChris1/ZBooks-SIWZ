@@ -14,9 +14,7 @@ export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
   const isSyncing = k.sync_status === "syncing" || busy;
   const progress = computeProgress(k);
 
-  // While a sync is running on the server, poll /api/keys every few
-  // seconds so the row picks up the final status without forcing the
-  // user to refresh the page. Stops as soon as we see ok / error / idle.
+  // While a sync runs server-side, poll so the row updates without a manual refresh.
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     if (k.sync_status !== "syncing") {
@@ -41,7 +39,7 @@ export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
     setBusy(true);
     startTransition(async () => {
       await fetch(`/api/keys/${k.id}/sync`, { method: "POST" });
-      // Give the server a moment to flip status → syncing before we read.
+      // Brief delay so the row's sync_status flips before we re-fetch.
       setTimeout(() => {
         router.refresh();
         setBusy(false);
@@ -195,12 +193,8 @@ function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
-/**
- * Render an indeterminate animated bar while syncing (we can't poll for
- * live block progress mid-sync — zingo's --waitsync blocks our channel
- * to the wallet), and a determinate bar when we have synced/tip data
- * from the last completed sync. Hidden when fully caught up.
- */
+// Indeterminate bar mid-sync (zingo --waitsync blocks live progress).
+// Determinate bar from the last completed sync's block/tip.
 function ProgressBar({ progress }: { progress: number | null }) {
   if (progress === null) {
     return (

@@ -4,16 +4,8 @@ import { randomBytes } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
-/**
- * DEMO-mode only: simulate the on-chain payment for a given memo-challenge
- * token. Primes the mock explorer with a synthetic tx/memo whose contents
- * satisfy the token — so the subsequent poll call sees it and signs the
- * user in.
- *
- * Refuses outside SIWZ_DEMO=1. Mirrors the dispatch in the issue/poll
- * endpoints: transparent tokens → prime an output, shielded tokens →
- * prime a memo.
- */
+// DEMO-mode only. Primes the mock explorer with a tx/memo matching the
+// supplied token so the poll endpoint sees it and signs the user in.
 export async function POST(req: Request) {
   if (process.env.SIWZ_DEMO !== "1") {
     return NextResponse.json(

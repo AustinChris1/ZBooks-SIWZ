@@ -12,21 +12,9 @@ import {
   type Ufvk,
 } from "./types";
 
-/**
- * Tiny JSON-file store for ZBooks. Replace with Postgres in production —
- * the API here is deliberately small (one record-type per collection) so
- * swapping it is mechanical.
- *
- * Atomic-ish write: write to a tmp file then rename. Same-directory rename
- * on NTFS doesn't expose a partial file to concurrent readers.
- *
- * Types + CATEGORY_LABEL live in ./types so client components can
- * import them without dragging node:fs / node:crypto into the browser
- * bundle. Re-exported here for backwards-compatibility of server code.
- */
-export {
-  CATEGORY_LABEL,
-};
+// JSON file store. Types + CATEGORY_LABEL live in ./types so client
+// components can import them without dragging node:fs into the bundle.
+export { CATEGORY_LABEL };
 export type {
   Category,
   Counterparty,
@@ -49,8 +37,6 @@ interface FileShape {
   counterparties: Counterparty[];
 }
 
-// ---------- read/write ----------
-
 const EMPTY: FileShape = { ufvks: [], transactions: [], team: [], counterparties: [] };
 
 function read(): FileShape {
@@ -60,7 +46,6 @@ function read(): FileShape {
     return {
       ufvks: (parsed.ufvks ?? []).map((k) => ({
         ...k,
-        // Backfill sync_status for rows persisted before the column existed.
         sync_status: (k.sync_status ?? "idle") as SyncStatus,
       })),
       transactions: parsed.transactions ?? [],
@@ -73,18 +58,13 @@ function read(): FileShape {
 }
 
 function write(state: FileShape): void {
+  // Atomic-ish: write to a tmp file then rename.
   const tmp = `${DB_PATH}.tmp`;
   writeFileSync(tmp, JSON.stringify(state, null, 2), "utf8");
   renameSync(tmp, DB_PATH);
 }
 
-// ---------- team / roles ----------
-
-/**
- * Ensures the signing-in address is recorded in the team table. The first
- * address ever to sign in is promoted to admin automatically (bootstrap).
- * Returns the resulting role.
- */
+// First address to sign in is promoted to admin so a fresh deploy has someone who can manage the team.
 export function ensureMember(address: string): Role {
   const state = read();
   const existing = state.team.find((m) => m.address === address);
@@ -133,8 +113,6 @@ export function removeMember(address: string): void {
   write(state);
 }
 
-// ---------- ufvks ----------
-
 export function listKeys(): Ufvk[] {
   return [...read().ufvks].sort((a, b) => a.created_at - b.created_at);
 }
@@ -180,7 +158,6 @@ export function updateKeySyncStatus(
 export function removeKey(id: string): void {
   const state = read();
   state.ufvks = state.ufvks.filter((k) => k.id !== id);
-  // Cascade-delete the transactions belonging to this key.
   state.transactions = state.transactions.filter((t) => t.ufvk_id !== id);
   write(state);
 }
@@ -190,8 +167,6 @@ export function setPrimaryKey(id: string): void {
   for (const k of state.ufvks) k.primary = k.id === id;
   write(state);
 }
-
-// ---------- transactions ----------
 
 export function listTransactions(): Transaction[] {
   return [...read().transactions].sort((a, b) => b.timestamp - a.timestamp);
@@ -213,17 +188,7 @@ export function tagTransaction(id: string, input: {
   return t;
 }
 
-/**
- * Insert or update transactions for a given UFVK from a sync result.
- *
- * Dedup key is (ufvk_id, txid). Existing rows keep their tag / notes /
- * id (so a re-sync doesn't clobber user-applied categorisation) but
- * pick up any newly-decrypted fields (memo / counterparty / block
- * height) from the latest sync.
- *
- * Returns `{inserted, updated}` counts so the sync layer can surface
- * what changed in the UI.
- */
+// Existing rows keep their tag / notes / id so a re-sync doesn't clobber user-applied categorisation.
 export function upsertTransactions(
   ufvkId: string,
   incoming: Array<{
@@ -264,8 +229,6 @@ export function upsertTransactions(
   return { inserted, updated };
 }
 
-// ---------- counterparties ----------
-
 export function listCounterparties(): Counterparty[] {
   return [...read().counterparties].sort((a, b) => a.label.localeCompare(b.label));
 }
@@ -274,10 +237,7 @@ export function getCounterparty(address: string): Counterparty | undefined {
   return read().counterparties.find((c) => c.address === address);
 }
 
-/**
- * Insert or update the label for an address. Empty `label` removes the
- * mapping (handy for "untag" without a separate endpoint).
- */
+// Empty label removes the mapping.
 export function upsertCounterparty(input: {
   address: string;
   label: string;
@@ -291,7 +251,6 @@ export function upsertCounterparty(input: {
 
   const idx = state.counterparties.findIndex((c) => c.address === address);
   if (!label) {
-    // Empty label means "forget this mapping".
     if (idx >= 0) {
       state.counterparties.splice(idx, 1);
       write(state);
@@ -320,10 +279,6 @@ export function upsertCounterparty(input: {
   return made;
 }
 
-/**
- * Build a single { address → label } map. Cheaper than calling
- * getCounterparty in a loop when rendering lists.
- */
 export function counterpartyLabelMap(): Map<string, string> {
   return new Map(read().counterparties.map((c) => [c.address, c.label]));
 }

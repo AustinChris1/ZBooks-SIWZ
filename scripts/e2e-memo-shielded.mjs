@@ -1,22 +1,6 @@
-/**
- * End-to-end test of the SIWZ shielded-memo flow against ZBooks.
- *
- *   node scripts/e2e-memo-shielded.mjs
- *
- * Requires the dev server in DEMO mode (SIWZ_DEMO=1) AND SIWZ_SERVICE_ADDRESS
- * set to a shielded address (zs… or u1…). In demo mode the mock explorer
- * stands in for the daemon RPC; demo-simulate seeds a fake decrypted memo
- * that the poll endpoint then matches.
- *
- * Exercises:
- *   1. Issue endpoint returns mode="shielded-memo", a memo string, a ZIP
- *      321 URI containing memo=, and the canonical dust amount.
- *   2. Poll returns 202 before demo-simulate (no silent sign-in).
- *   3. demo-simulate primes a memo fixture.
- *   4. Poll returns 200 with identity + envelope.
- *   5. NextAuth memo provider creates a session.
- */
-import { randomBytes } from "node:crypto";
+// End-to-end test of the SIWZ shielded-memo flow against ZBooks.
+// Run with: node scripts/e2e-memo-shielded.mjs
+// Requires the dev server in DEMO mode and a shielded SIWZ_SERVICE_ADDRESS.
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
 const ok = (m) => console.log(`✓ ${m}`);
@@ -24,7 +8,6 @@ const fail = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
-  // 1) Issue
   const issueRes = await fetch(`${BASE}/api/auth/memo/issue`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -61,7 +44,6 @@ async function main() {
     process.exit(0);
   }
 
-  // 2) Poll should not match before demo-simulate
   const earlyPoll = await fetch(`${BASE}/api/auth/memo/poll`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -72,7 +54,6 @@ async function main() {
   }
   ok("poll returns 202 (no memo yet) before demo-simulate");
 
-  // 3) Simulate
   const simRes = await fetch(`${BASE}/api/auth/memo/demo-simulate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -83,7 +64,6 @@ async function main() {
   if (simJson.mode !== "shielded-memo") fail(`demo-simulate mode mismatch: ${simJson.mode}`);
   ok(`demo simulate primed shielded memo (txid ${simJson.txid?.slice(0, 16)}…)`);
 
-  // 4) Poll → 200
   let pollJson;
   let attempts = 0;
   while (attempts < 5) {
@@ -109,7 +89,6 @@ async function main() {
   if (!pollJson.identity?.startsWith("anon:")) fail(`expected anonymous identity, got ${pollJson.identity}`);
   ok(`anonymous identity assigned: ${pollJson.identity}`);
 
-  // 5) NextAuth memo callback
   const csrfRes = await fetch(`${BASE}/api/auth/csrf`);
   const csrfCookies = csrfRes.headers.getSetCookie?.() ?? [csrfRes.headers.get("set-cookie")].filter(Boolean);
   const { csrfToken } = await csrfRes.json();

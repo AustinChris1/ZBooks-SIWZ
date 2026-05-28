@@ -9,12 +9,8 @@ import { currentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Audit log derived from Transaction.tagged_by / tagged_at. Read-only,
- * sorted newest first. Doesn't try to capture role changes or key adds
- * today — for those we'd need an explicit events table; this is the
- * 80% audit reviewers actually want.
- */
+// Tagging audit log. Doesn't include role changes / key adds — would
+// need a separate events table for that.
 export default async function AuditPage() {
   const user = await currentUser();
   if (!user) redirect("/");

@@ -3,6 +3,7 @@ import { listMembers } from "@/lib/db";
 import { canManageTeam, currentUser } from "@/lib/session";
 import { AddMemberForm } from "./AddMemberForm";
 import { MemberRow } from "./MemberRow";
+import { WipeButton } from "./WipeButton";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default async function TeamPage() {
 
   const team = listMembers();
   const canManage = canManageTeam(user.role);
+  const demoMode = process.env.SIWZ_DEMO === "1";
 
   return (
     <div className="flex flex-col gap-6">
@@ -56,6 +58,17 @@ export default async function TeamPage() {
           />
         ))}
       </ul>
+
+      {demoMode && canManage && (
+        <div className="rounded-xl border border-amber-300 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 p-4 max-w-2xl flex items-center justify-between gap-3">
+          <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+            <strong className="font-semibold">Demo mode.</strong> SIWZ_DEMO=1 is
+            set. The button below wipes every key, transaction, team
+            member, and label so you can record a fresh walkthrough.
+          </div>
+          <WipeButton />
+        </div>
+      )}
     </div>
   );
 }

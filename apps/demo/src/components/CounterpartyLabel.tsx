@@ -3,14 +3,10 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/components/Toast";
 
-/**
- * Inline labeller. Shows the existing label if one is set, otherwise a
- * shortened address with a "+ label" affordance. Clicking it expands an
- * inline input — saving on Enter / blur persists to /api/counterparties
- * and triggers a router refresh so every other row that references the
- * same address updates too.
- */
+// Inline labeller. Save on Enter/blur, router.refresh() so every row
+// referencing the same address updates.
 export function CounterpartyLabel({
   address,
   label,
@@ -21,6 +17,7 @@ export function CounterpartyLabel({
   editable: boolean;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(label ?? "");
   const [isPending, startTransition] = useTransition();
@@ -30,8 +27,6 @@ export function CounterpartyLabel({
     if (editing) inputRef.current?.select();
   }, [editing]);
 
-  // Keep draft in sync if the saved label updates (e.g. another row
-  // labelled the same address and triggered a refresh).
   useEffect(() => {
     setDraft(label ?? "");
   }, [label]);
@@ -42,12 +37,18 @@ export function CounterpartyLabel({
       return;
     }
     startTransition(async () => {
-      await fetch("/api/counterparties", {
+      const res = await fetch("/api/counterparties", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ address, label: draft }),
       });
       setEditing(false);
+      if (res.ok) {
+        toast({
+          message: draft ? `Saved label "${draft}"` : "Label removed",
+          tone: "success",
+        });
+      }
       router.refresh();
     });
   };

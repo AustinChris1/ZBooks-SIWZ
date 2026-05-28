@@ -1,10 +1,7 @@
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
-/**
- * Trivial JSON-file comment store. The point of this app is the SIWZ
- * integration, not the data layer — swap for Postgres in real life.
- */
+// Reference-app JSON store. Swap for a real DB when adopting.
 const DATA_DIR = join(process.cwd(), "data");
 const DB_PATH = join(DATA_DIR, "comments.json");
 

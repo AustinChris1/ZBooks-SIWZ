@@ -11,14 +11,8 @@ interface Props {
   counterpartyLabels: Record<string, string>;
 }
 
-/**
- * Reports view with a date-range filter that drives the KPIs, charts,
- * monthly table, top-contractors list, and the CSV export URL all at
- * once. Defaults to "all time" so first load doesn't hide anything.
- */
+// Date-range filter drives KPIs, charts, monthly table, contractors, and export URL.
 export function ReportsView({ allTxs, counterpartyLabels }: Props) {
-  // Build the list of months that have at least one tx, so the dropdown
-  // shows real options instead of an infinite past/future picker.
   const availableMonths = useMemo(() => {
     const set = new Set<string>();
     for (const t of allTxs) {

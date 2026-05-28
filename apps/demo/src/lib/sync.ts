@@ -1,24 +1,8 @@
-/**
- * UFVK → ZBooks transaction sync.
- *
- * The lightwallet-rpc wrapper on the VPS holds one zingo-cli wallet per
- * UFVK (see apps/lightwallet-rpc/src/server.mjs). This module is the
- * ZBooks-side glue: ask the wrapper for the latest value_transfers for
- * a UFVK, normalise into the persisted Transaction shape, upsert.
- *
- * Status is written back into the Ufvk row so the UI can show "syncing
- * now", "last synced 2m ago", or "last sync failed: <reason>".
- */
 import { getShieldedExplorer } from "./explorer";
 import { getKey, updateKeySyncStatus, upsertTransactions } from "./db";
 
-/**
- * Module-level set of UFVK ids that have a sync in flight. Prevents two
- * concurrent calls (e.g. user spams the refresh button) from both
- * pulling against the wrapper. A real deployment with multiple ZBooks
- * processes would need a row-level "syncing since" timestamp + lease;
- * single-process JSON-file DB makes a memory set fine for now.
- */
+// In-process lock so a re-click of "Sync" can't run two zingo processes
+// against the same wallet. Multi-process deploys would need a DB lease.
 const inFlight = new Set<string>();
 
 export interface SyncOutcome {
@@ -42,16 +26,13 @@ export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
   if (!explorer) {
     inFlight.delete(ufvkId);
     const msg =
-      "No shielded backend is configured. Set LIGHTWALLET_RPC_URL + " +
-      "LIGHTWALLET_RPC_TOKEN, or ZCASH_RPC_URL, or enable SIWZ_DEMO=1.";
+      "No shielded backend configured. Set LIGHTWALLET_RPC_URL + LIGHTWALLET_RPC_TOKEN, or ZCASH_RPC_URL, or SIWZ_DEMO=1.";
     updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
     return { ok: false, error: msg };
   }
   if (!explorer.getTransactionsForUfvk) {
     inFlight.delete(ufvkId);
-    const msg =
-      "The configured shielded backend doesn't support UFVK syncing. " +
-      "LightwalletExplorer (via apps/lightwallet-rpc) is the only one that does today.";
+    const msg = "The configured shielded backend doesn't support UFVK syncing.";
     updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
     return { ok: false, error: msg };
   }
@@ -67,9 +48,7 @@ export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
       return {
         txid: t.txid,
         direction: t.direction,
-        // Outgoing amounts are stored as negative ZEC so the existing
-        // /transactions and /reports rendering keeps working without
-        // touching every consumer to read direction separately.
+        // Outgoing stored as negative so /reports + /transactions render without a direction-aware sign flip.
         amount_zec: t.direction === "out" ? -Math.abs(amountZec) : Math.abs(amountZec),
         counterparty: t.counterparty ?? undefined,
         memo: t.memo ?? undefined,
@@ -98,24 +77,14 @@ export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
   }
 }
 
-/**
- * Fire-and-forget variant for endpoints that don't want to wait the
- * couple of minutes a first-time UFVK sync can take. The HTTP response
- * returns immediately with sync_status "syncing"; the client polls
- * /api/keys to learn when it finishes.
- */
+// Fire-and-forget: HTTP returns immediately, client polls /api/keys for status.
 export function syncUfvkInBackground(ufvkId: string): void {
   void syncUfvk(ufvkId).catch((err) => {
-    // syncUfvk swallows its own errors into the row; this catch is just
-    // for the truly unexpected exception that escapes its try/catch.
     console.error(`[sync] uncaught for ${ufvkId}:`, err);
   });
 }
 
 function zatoshiStringToZec(s: string): number {
-  // zatoshi is u64-shaped on the wire; ZEC display values fit in a JS
-  // number safely until ~90 million ZEC (and the chain's total supply
-  // is 21M), so a direct divide is fine.
   const n = Number(s);
   if (!Number.isFinite(n)) return 0;
   return n / 1e8;

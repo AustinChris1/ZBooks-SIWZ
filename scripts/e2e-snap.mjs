@@ -1,18 +1,6 @@
-/**
- * End-to-end test of the Snap auth path against the running ZBooks demo.
- *
- *   node scripts/e2e-snap.mjs
- *
- * Steps:
- *   1. Synthesize a Snap identity (fingerprint + UFVK)
- *   2. POST /api/auth/snap-envelope to get the HMAC envelope
- *   3. POST credentials to NextAuth's "snap" provider callback
- *   4. Assert session is created with identity = `snap:<fingerprint>`
- *   5. Assert the UFVK was auto-imported into /keys
- *
- * MetaMask isn't part of this script — we simulate the data shape the
- * Snap would return after a successful in-browser permission grant.
- */
+// End-to-end test of the Snap auth path against the running ZBooks demo.
+// Run with: node scripts/e2e-snap.mjs
+// Simulates the data shape the Snap returns after an in-browser permission grant.
 import { randomBytes } from "node:crypto";
 
 const BASE = process.env.BASE ?? "http://localhost:3000";
@@ -20,13 +8,10 @@ const ok = (m) => console.log(`✓ ${m}`);
 const fail = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
 async function main() {
-  // 1) Synthesize: random 32-byte fingerprint (hex), valid-shaped UFVK
   const fingerprint = randomBytes(16).toString("hex");
-  // bech32 alphabet chars only — uview1 + 80 of them
   const ufvk = `uview1${"q".repeat(80)}`;
   ok(`synthetic identity: fingerprint=${fingerprint.slice(0, 12)}…`);
 
-  // 2) Get HMAC envelope from server
   const envRes = await fetch(`${BASE}/api/auth/snap-envelope`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -39,7 +24,6 @@ async function main() {
   const { envelope } = await envRes.json();
   ok(`got envelope (${envelope.length} chars)`);
 
-  // 3) NextAuth CSRF → snap callback
   const csrfRes = await fetch(`${BASE}/api/auth/csrf`);
   if (!csrfRes.ok) fail(`csrf endpoint returned ${csrfRes.status}`);
   const csrfCookies = csrfRes.headers.getSetCookie?.() ?? [csrfRes.headers.get("set-cookie")].filter(Boolean);
@@ -72,7 +56,6 @@ async function main() {
   }
   ok("session cookie issued by NextAuth snap provider");
 
-  // 4) Confirm session identity
   const sessRes = await fetch(`${BASE}/api/auth/session`, {
     headers: { cookie: cookieHeader(cookieJar) },
   });
@@ -83,7 +66,6 @@ async function main() {
   }
   ok(`session.user.address = ${sess.user.address}`);
 
-  // 5) Confirm UFVK was auto-imported via /api/keys
   const keysRes = await fetch(`${BASE}/api/keys`, {
     headers: { cookie: cookieHeader(cookieJar) },
   });

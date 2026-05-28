@@ -3,7 +3,6 @@ import { issueNonce } from "@siwz/next-auth/nonce";
 
 export const dynamic = "force-dynamic";
 
-/** Identical to ZBooks's nonce endpoint — SIWZ ships this helper. */
 export async function GET() {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) return NextResponse.json({ error: "NEXTAUTH_SECRET not set" }, { status: 500 });

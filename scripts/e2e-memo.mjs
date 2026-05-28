@@ -1,26 +1,12 @@
-/**
- * End-to-end test of the SIWZ memo-challenge flow against ZBooks.
- *
- *   node scripts/e2e-memo.mjs
- *
- * Exercises the new auto-polling path:
- *   1. Issue a challenge with NO ufvk (anonymous identity).
- *   2. Confirm the amount is dust-range (< 0.0002 ZEC).
- *   3. Poll the new /api/auth/memo/poll endpoint until it returns 200.
- *   4. Hand the envelope to NextAuth's "memo" provider.
- *   5. Confirm session is created with an `anon:` identity.
- *   6. Confirm NO UFVK is auto-imported (anonymous sessions don't have one).
- *
- * Requires the dev server in DEMO mode (SIWZ_DEMO=1) so the issue
- * endpoint primes the mock explorer with a synthetic matching tx.
- */
+// End-to-end test of the SIWZ memo-challenge flow against ZBooks.
+// Run with: node scripts/e2e-memo.mjs
+// Requires the dev server in DEMO mode (SIWZ_DEMO=1).
 const BASE = process.env.BASE ?? "http://localhost:3000";
 const ok = (m) => console.log(`✓ ${m}`);
 const fail = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
-  // 1) Issue a challenge with no UFVK
   const issueRes = await fetch(`${BASE}/api/auth/memo/issue`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -31,7 +17,6 @@ async function main() {
   if (!challenge.uri?.startsWith("zcash:")) fail(`expected ZIP 321 URI, got ${challenge.uri}`);
   ok(`challenge issued anonymously: amount=${challenge.amountZec} ZEC → ${challenge.serviceAddress}`);
 
-  // 2) Amount must be in dust range
   const amountZ = BigInt(challenge.amountZatoshi);
   if (amountZ < 10_000n || amountZ > 20_000n) {
     fail(`amount ${challenge.amountZatoshi} zatoshi out of dust range [10000, 20000]`);
@@ -41,10 +26,7 @@ async function main() {
   if (!challenge.demoMode) fail(`expected demoMode (set SIWZ_DEMO=1 in .env.local and restart dev server)`);
   ok(`demo mode active`);
 
-  // 3a) In the new flow, the issue endpoint does NOT auto-prime. The user
-  // must explicitly call /demo-simulate (UI: "Simulate payment" button)
-  // to seed the mock explorer with a matching tx. Without that step, the
-  // poll endpoint should keep returning 202 (no match).
+  // Issue does not auto-prime: poll must return 202 until demo-simulate is called.
   const earlyPoll = await fetch(`${BASE}/api/auth/memo/poll`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -64,7 +46,6 @@ async function main() {
   const simJson = await simRes.json();
   ok(`demo simulate primed mock with txid ${simJson.txid?.slice(0, 16)}…`);
 
-  // 3b) Now poll — should match quickly.
   let pollJson;
   let attempts = 0;
   while (attempts < 5) {
@@ -91,7 +72,6 @@ async function main() {
   }
   ok(`anonymous identity assigned: ${pollJson.identity}`);
 
-  // 4) NextAuth CSRF + memo callback
   const csrfRes = await fetch(`${BASE}/api/auth/csrf`);
   const csrfCookies = csrfRes.headers.getSetCookie?.() ?? [csrfRes.headers.get("set-cookie")].filter(Boolean);
   const { csrfToken } = await csrfRes.json();
@@ -122,17 +102,15 @@ async function main() {
   }
   ok(`session cookie issued by NextAuth memo provider`);
 
-  // 5) Confirm session identity
   const sessRes = await fetch(`${BASE}/api/auth/session`, {
     headers: { cookie: cookieHeader(cookieJar) },
   });
   const sess = await sessRes.json();
-  if (!sess?.user?.address?.startsWith("snap:")) {
-    fail(`expected session.user.address = snap:<hash>, got ${JSON.stringify(sess)}`);
+  if (!sess?.user?.address?.startsWith("anon:")) {
+    fail(`expected session.user.address = anon:<hash>, got ${JSON.stringify(sess)}`);
   }
   ok(`session.user.address = ${sess.user.address}`);
 
-  // 6) Confirm NO UFVK was auto-imported (anonymous session)
   const keysRes = await fetch(`${BASE}/api/keys`, { headers: { cookie: cookieHeader(cookieJar) } });
   const { keys } = await keysRes.json();
   const anonKey = keys.find((k) => k.ufvk.startsWith("anon:"));

@@ -1,16 +1,6 @@
 #!/usr/bin/env node
-/**
- * Detect a running Zcash daemon and print the env vars ZBooks needs.
- *
- *   node scripts/find-zcash-rpc.mjs
- *
- * Walks common config / cookie / binary locations across zcashd, zallet,
- * and zaino. For each thing it finds, prints either:
- *   - the .env line to paste into apps/demo/.env.local, or
- *   - an instruction for what to add to the daemon config.
- *
- * No network calls — purely filesystem inspection. Safe to run any time.
- */
+// Detect a running Zcash daemon and print the env vars ZBooks needs.
+// Run with: node scripts/find-zcash-rpc.mjs
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir, platform } from "node:os";
@@ -24,17 +14,12 @@ const found = (k, v) => console.log(`  ✓ ${k.padEnd(20)} ${v}`);
 const missing = (k) => console.log(`  · ${k}`);
 const todo = (s) => console.log(`  → ${s}`);
 
-// 1. Find a binary in PATH (or common install spots).
 banner("zcash binary");
 const CLI_NAMES = ["zcash-cli", "zcash-cli.exe", "zcash", "zcash.exe", "zaino-cli", "zallet"];
 const COMMON_BINS = [
-  // Linux package installs
   "/usr/bin", "/usr/local/bin", "/opt/zcash/bin",
-  // macOS
   "/usr/local/opt/zcash/bin", "/opt/homebrew/bin",
-  // ~/bin / ~/.local/bin
   join(HOME, "bin"), join(HOME, ".local/bin"),
-  // Cargo install (common for zallet)
   join(HOME, ".cargo/bin"),
 ];
 const foundBins = [];
@@ -49,7 +34,6 @@ for (const dir of COMMON_BINS) {
     } catch { /* ignore */ }
   }
 }
-// Try `which` / `where`
 try {
   const cmd = PLATFORM === "win32" ? "where" : "which";
   for (const name of ["zcash-cli", "zcash"]) {
@@ -67,18 +51,14 @@ if (foundBins.length === 0) {
   todo("Install or note your zcash-cli path manually, then set ZCASH_CLI_PATH=/path/to/zcash-cli");
 }
 
-// 2. Find config / cookie files.
 banner("daemon config & cookie");
 const CONFIG_PATHS = [
-  // zcashd
   join(HOME, ".zcash/zcash.conf"),
-  join(HOME, "AppData/Roaming/Zcash/zcash.conf"),  // Windows
-  join(HOME, "Library/Application Support/Zcash/zcash.conf"),  // macOS
-  // zallet — locations evolving; check common dotdirs
+  join(HOME, "AppData/Roaming/Zcash/zcash.conf"),
+  join(HOME, "Library/Application Support/Zcash/zcash.conf"),
   join(HOME, ".zallet/zallet.toml"),
   join(HOME, ".config/zallet/zallet.toml"),
   join(HOME, ".local/share/zallet/config.toml"),
-  // zaino
   join(HOME, ".zaino/zainod.toml"),
   join(HOME, ".config/zaino/zainod.toml"),
 ];
@@ -112,7 +92,6 @@ for (const p of COOKIE_PATHS) {
 }
 if (!foundCookie) missing("no cookie file (daemon may not be running, or uses rpcuser/rpcpassword instead)");
 
-// 3. Parse zcash.conf for RPC settings.
 banner("HTTP RPC config");
 let rpcUser, rpcPass, rpcPort = "8232", rpcAllow;
 if (foundConfig && foundConfig.endsWith("zcash.conf")) {
@@ -132,14 +111,13 @@ if (foundConfig && foundConfig.endsWith("zcash.conf")) {
   if (rpcUser) found("rpcuser", rpcUser);
   if (rpcPass) found("rpcpassword", "<set>");
   if (!server || server !== "1") {
-    todo(`zcash.conf is missing "server=1" — the daemon won't accept RPC. Add it then restart.`);
+    todo(`zcash.conf is missing "server=1", the daemon won't accept RPC. Add it then restart.`);
   }
 } else if (foundConfig) {
   console.log(`  config is at ${foundConfig} but auto-parsing toml not implemented;`);
   console.log(`  open it and look for an [rpc] section with bind / username / password fields.`);
 }
 
-// 4. Print ZBooks env vars.
 banner("Suggested apps/demo/.env.local additions");
 console.log();
 if (rpcUser && rpcPass) {
@@ -167,7 +145,6 @@ if (rpcUser && rpcPass) {
   console.log(`#    Then restart the daemon.`);
 }
 
-// 5. Sanity-test against a running daemon if we have transport details.
 banner("Test the connection");
 if (foundBins.length > 0) {
   const cli = foundBins.find((b) => b.includes("zcash-cli")) ?? foundBins[0];

@@ -1,12 +1,5 @@
-/**
- * Pure types + constants shared between server and client modules.
- *
- * db.ts depends on node:fs / node:crypto, so any client component that
- * imports a *value* (not just a type) from db.ts drags those node
- * imports into the browser bundle. To avoid that, the bits that need to
- * be referenced from both sides live here. db.ts re-exports them so
- * server code can keep importing from "@/lib/db" if it prefers.
- */
+// Pure types shared between server (db.ts) and client. Live here so
+// client components can import them without dragging node:fs into the bundle.
 
 export type Role = "admin" | "treasurer" | "viewer";
 
@@ -47,11 +40,7 @@ export interface Ufvk {
   last_tx_count?: number;
   last_chain_tip?: number;
   wallet_birthday?: number;
-  /**
-   * User-supplied scan-start block. When set, the wrapper's first sync
-   * for this UFVK uses it as `--birthday`. Optional — the wrapper has
-   * its own sensible default (NU5 activation).
-   */
+  // Scan-start block for the wrapper's first sync; wrapper has its own default if unset.
   birthday?: number;
 }
 

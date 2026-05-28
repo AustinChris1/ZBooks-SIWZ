@@ -5,14 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import type { Ufvk } from "@/lib/types";
 
-/**
- * Top-of-page sync summary for /transactions. Shows the oldest "last
- * synced" time across the imported keys, plus a "Refresh all" button
- * that fans a sync request out to every key. While anything is syncing,
- * the bar polls the keys API every few seconds and triggers a router
- * refresh when the status changes — that way new transactions appear
- * inline without a manual reload.
- */
+// Top-of-page sync summary with "Refresh all" fan-out.
 export function SyncBar({ keys, canEdit }: { keys: Ufvk[]; canEdit: boolean }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();

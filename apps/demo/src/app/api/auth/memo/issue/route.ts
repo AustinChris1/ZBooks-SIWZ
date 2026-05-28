@@ -14,12 +14,8 @@ export const dynamic = "force-dynamic";
 const SERVICE_ADDRESS = process.env.SIWZ_SERVICE_ADDRESS;
 const DEMO_MODE = process.env.SIWZ_DEMO === "1";
 
-/**
- * Addresses derived from publicly-known test private keys. ANYTHING sent
- * to these can be swept by anyone who reads the source code. The issue
- * endpoint refuses to use them so a misconfigured deploy can't silently
- * drain real funds.
- */
+// Addresses with public test-keys in this repo's source. Refuse to use
+// them as service addresses so a misconfigured deploy can't drain funds.
 const KNOWN_LEAKED_ADDRESSES = new Set([
   "t1QzwK7oMTdr4XF32s5RAtK9Eq45NFtdSbo",
   "t1MKNc8vbN8ybMUJFcdKf6i4bRTKvtQCxpH",
@@ -46,7 +42,6 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 
-  // Detect address type → mode.
   let mode: "transparent-amount" | "shielded-memo";
   try {
     mode = inferMemoChallengeMode(SERVICE_ADDRESS);
@@ -56,10 +51,7 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 
-  // For shielded mode, refuse to proceed unless we have access to a
-  // shielded-capable explorer (mock in DEMO mode, or a daemon RPC).
-  // Public block explorers can't decrypt memos so they cannot satisfy
-  // shielded verification.
+  // Shielded mode needs a memo-decrypting backend (mock, daemon, or wrapper).
   if (mode === "shielded-memo") {
     const shieldedExplorer = getShieldedExplorer();
     if (!shieldedExplorer) {
@@ -79,19 +71,10 @@ export async function POST(req: Request) {
       }, { status: 500 });
     }
   } else {
-    // Transparent: surface a clear warning if SIWZ_DEMO=0 with no explorer
-    // fallback, since BlockchairExplorer requires an internet connection
-    // to the mainnet API.
     void getDefaultExplorer();
   }
 
-  // Identity selection priority (most → least specific):
-  //   1. `ufvk`            → cross-device persistent identity (Zcash-native)
-  //   2. `previousAnonId`  → same-device persistent anonymous identity
-  //   3. (nothing)         → fresh server-generated anon, ephemeral
-  //
-  // Both `ufvk` and `previousAnonId` are validated before use to avoid
-  // a malicious client supplying an arbitrary string as their identity.
+  // Identity precedence: ufvk → previousAnonId → fresh anon.
   let body: { ufvk?: unknown; previousAnonId?: unknown } = {};
   try {
     body = await req.json().catch(() => ({}));
@@ -104,16 +87,8 @@ export async function POST(req: Request) {
   if (ufvkRaw) {
     const inspection = inspectUfvk(ufvkRaw);
     if (!inspection.valid) return NextResponse.json({ error: inspection.reason }, { status: 400 });
-    // Derive a deterministic anon-shaped identity from the UFVK rather
-    // than carrying the raw UFVK as the session identity. Two wins:
-    //   1. The UFVK never enters the signed challenge token, so even
-    //      the HMAC payload doesn't leak it.
-    //   2. The client can persist this anon-id in localStorage after
-    //      sign-in (MemoSignIn.finishSignIn already does that for any
-    //      identity matching /^anon:[0-9a-f]+$/i). On the next sign-in
-    //      it's sent as previousAnonId and resolves to the SAME identity
-    //      without the user pasting the UFVK again. The UFVK itself is
-    //      still required only on the *first* device sign-in.
+    // Hash so the raw UFVK never enters the signed token, and so the
+    // client can store the resulting anon id for one-click re-auth.
     identity = `anon:${createHash("sha256").update(ufvkRaw).digest("hex").slice(0, 32)}`;
   } else if (previousAnonIdRaw) {
     if (!/^anon:[0-9a-f]{8,128}$/i.test(previousAnonIdRaw)) {

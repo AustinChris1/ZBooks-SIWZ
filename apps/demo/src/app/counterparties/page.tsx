@@ -5,13 +5,6 @@ import { CounterpartiesList } from "./CounterpartiesList";
 
 export const dynamic = "force-dynamic";
 
-/**
- * The contacts page. Two layers:
- *   - "Saved" — counterparties the user has already labelled.
- *   - "Unlabelled" — counterparties seen on at least one tx but never
- *     given a name. Sorted by tx count descending so the addresses you
- *     actually care about float to the top.
- */
 export default async function CounterpartiesPage() {
   const user = await currentUser();
   if (!user) redirect("/");

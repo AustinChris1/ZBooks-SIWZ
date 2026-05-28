@@ -4,49 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
-/**
- * Memo-challenge sign-in. The Zcash-native sign-in flow:
- *   1. App asks the server for a challenge (no input needed by default).
- *   2. UI renders a QR + clickable `zcash:` deep link with a tiny
- *      unique amount.
- *   3. User scans/taps → wallet opens pre-filled → confirms send.
- *   4. App auto-polls the block explorer for a matching incoming tx.
- *   5. As soon as a match is detected, the user is signed in.
- *
- * Identity model:
- *   - **Anonymous by default.** Each fresh sign-in mints an opaque
- *     server-generated id (`anon:<random>`). The id is persisted to
- *     `localStorage` so a returning anonymous user on the same device
- *     gets the SAME anon session restored — equivalent to a "remember
- *     me" cookie. The anon id leaks nothing about the user.
- *   - **UFVK-bound on opt-in.** If the user pastes their UFVK in the
- *     "Returning user?" field, the session is bound to that UFVK and is
- *     stable across browsers / devices. UFVKs are NEVER stored client-
- *     side because they leak the wallet's full transaction history;
- *     the user is expected to keep their UFVK in a password manager and
- *     paste it when they want cross-device recognition. NextAuth's
- *     session cookie keeps them signed in until they explicitly sign
- *     out (so paste-once-per-month rather than per-visit).
- *
- * Why this split: a UFVK is read-only but powerful — anyone who holds
- * one can see every payment your account has ever made. Storing it in
- * localStorage would expose it to XSS, browser extensions, and anyone
- * with brief device access. An opaque anon id has none of that risk —
- * it's just a session handle the server itself generated and reissued.
- */
-// LocalStorage key holds an OPAQUE anon session id ONLY. Never a UFVK.
-const ANON_STORAGE_KEY = "siwz.zbooks.previous_anon_id";
+// Memo-challenge sign-in: server issues a challenge, user pays a tiny
+// amount with a nonce-bearing memo, server detects on-chain, signs them in.
+//
+// Identity: `anon:<hex>` either random (fresh anon session) or
+// `anon:<sha256(ufvk).slice(0,32)>` if a UFVK was supplied. UFVKs are
+// never stored client-side — they reveal the wallet's full tx history.
+// The anon id is safe to keep in localStorage for "remember me".
 
-/**
- * Re-auth bundle: { identity, envelope } the server issued the last
- * time this device completed the memo ceremony. Replaying it lets the
- * user sign back in with one click — no QR scan, no dust payment.
- *
- * Threat model: equivalent to a long-lived "remember me" cookie. Anyone
- * with browser access can sign in as this identity without a wallet.
- * The envelope is HMAC-signed by NEXTAUTH_SECRET, so rotating that
- * secret invalidates every stored bundle. We never store the UFVK.
- */
+const ANON_STORAGE_KEY = "siwz.zbooks.previous_anon_id";
+// One-click re-auth: server-issued HMAC envelope replayed against signIn
+// skips the whole ceremony. Same threat model as a long-lived remember-me cookie.
 const REAUTH_STORAGE_KEY = "siwz.zbooks.reauth";
 interface ReauthBundle {
   identity: string;
@@ -70,13 +38,9 @@ export function MemoSignIn() {
   const [persistedAnonId, setPersistedAnonId] = useState<string | null>(null);
   const [reauthBundle, setReauthBundle] = useState<ReauthBundle | null>(null);
   const [reauthBusy, setReauthBusy] = useState(false);
-  // Show the full memo-ceremony UI even when a re-auth bundle is
-  // present (e.g. "Use a different account" → reveal QR flow).
+  // Set when the user clicks "Use a different account" past the reauth panel.
   const [forceFreshSignin, setForceFreshSignin] = useState(false);
 
-  // On mount, restore any previously-persisted ANON id + reauth bundle.
-  // The bundle is the killer feature: a returning user clicks "Continue
-  // as …" and skips the memo ceremony entirely.
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -84,9 +48,7 @@ export function MemoSignIn() {
       if (saved && /^anon:[0-9a-f]+$/i.test(saved)) {
         setPersistedAnonId(saved);
       }
-    } catch {
-      /* localStorage may be disabled in private mode; just skip the nicety */
-    }
+    } catch { /* private mode */ }
     try {
       const raw = window.localStorage.getItem(REAUTH_STORAGE_KEY);
       if (raw) {
@@ -130,8 +92,6 @@ export function MemoSignIn() {
         redirect: false,
       });
       if (result?.error || !result?.ok) {
-        // Server rejected the stored envelope. Clear it so the user
-        // sees the regular sign-in flow next time.
         try { window.localStorage.removeItem(REAUTH_STORAGE_KEY); } catch { /* noop */ }
         setReauthBundle(null);
         setError("Stored sign-in expired. Please sign in again.");
@@ -149,10 +109,7 @@ export function MemoSignIn() {
     setIssuing(true);
     try {
       const ufvk = returningUfvk.trim();
-      // Prefer UFVK if user provided one. Otherwise, send the persisted
-      // anon id (if any) so the server can re-bind to the same anonymous
-      // session — keeps the user "logged in as the same anon" on this
-      // device across sign-outs/expirations.
+      // UFVK takes precedence; otherwise replay the persisted anon-id to rebind to the same session.
       const body: { ufvk?: string; previousAnonId?: string } = {};
       if (ufvk) body.ufvk = ufvk;
       else if (persistedAnonId) body.previousAnonId = persistedAnonId;
@@ -166,9 +123,6 @@ export function MemoSignIn() {
         throw new Error(j.error ?? `Server returned ${res.status}`);
       }
       const data = (await res.json()) as MemoChallengeData;
-      // Defensive: if we're in DEMO mode the user's actual on-chain tx
-      // (if any) will NEVER be detected — the explorer is a mock. Make
-      // that loud in the UI so nobody accidentally sends real ZEC.
       setChallenge(data);
     } catch (err) {
       setError((err as Error).message);
@@ -177,8 +131,6 @@ export function MemoSignIn() {
     }
   };
 
-  // Auto-poll the explorer once a challenge is active. Stops on success,
-  // on error, or when the user cancels.
   const pollingRef = useRef(false);
   useEffect(() => {
     if (!challenge || signedIn) return;
@@ -207,12 +159,10 @@ export function MemoSignIn() {
           return;
         }
       } catch (err) {
-        // Network blip — keep going.
         console.warn("[memo] poll failed:", err);
       }
       if (pollingRef.current) timer = setTimeout(tick, 6_000);
     };
-    // Kick first poll quickly so DEMO-mode matches return near-instantly.
     timer = setTimeout(tick, 1_500);
 
     return () => {
@@ -227,9 +177,7 @@ export function MemoSignIn() {
     pollingRef.current = false;
     setPolling(false);
     setSignedIn(true);
-    // Forward the UFVK the user pasted in the "Returning user?" box so
-    // the server can auto-attach it to /keys. The server validates that
-    // sha256(ufvk).slice(0,32) matches the identity before trusting it.
+    // Server validates sha256(ufvk).slice(0,32) matches identity before attaching it to /keys.
     const ufvkToForward = returningUfvk.trim() || undefined;
     const result = await signIn("memo", {
       identity,
@@ -242,24 +190,17 @@ export function MemoSignIn() {
       setSignedIn(false);
       return;
     }
-    // Persist the ANON id so the issue endpoint can rebind the user to
-    // the same anon session on next sign-in (used when there's no
-    // reauth bundle, e.g. first run on a new device).
     if (identity && /^anon:[0-9a-f]+$/i.test(identity)) {
       try {
         window.localStorage.setItem(ANON_STORAGE_KEY, identity);
         setPersistedAnonId(identity);
-      } catch { /* private mode / quota — no-op */ }
+      } catch { /* private mode */ }
     }
-    // Persist the (identity, envelope) bundle so a returning user can
-    // skip the whole memo ceremony next time and just click "Continue
-    // as …". The envelope is an HMAC the server can re-verify without
-    // any new on-chain payment.
     try {
       const bundle: ReauthBundle = { identity, envelope, savedAt: Date.now() };
       window.localStorage.setItem(REAUTH_STORAGE_KEY, JSON.stringify(bundle));
       setReauthBundle(bundle);
-    } catch { /* private mode / quota — no-op */ }
+    } catch { /* private mode */ }
     router.refresh();
     router.push("/keys");
   };
@@ -285,9 +226,6 @@ export function MemoSignIn() {
     }
   };
 
-  // Returning-user fast path: if we have a stored re-auth bundle and
-  // the user hasn't explicitly asked for the regular flow, surface a
-  // single "Continue as …" button.
   if (reauthBundle && !forceFreshSignin && !challenge) {
     return (
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/40 p-5 flex flex-col gap-4">
@@ -354,11 +292,6 @@ export function MemoSignIn() {
           </p>
         </div>
 
-        {/* Returning-user UFVK input. Sign-ins WITH a UFVK are bound to
-            that identity and recognised across browsers / devices. Sign-ins
-            WITHOUT a UFVK are anonymous but device-persistent (an opaque
-            anon id is stored in localStorage so the same browser gets the
-            same anon session back next time). */}
         {persistedAnonId && !showReturning && (
           <div className="text-xs flex flex-wrap items-center gap-2 rounded-md border border-black/10 dark:border-white/15 bg-black/[0.03] dark:bg-white/[0.03] px-3 py-2">
             <span className="opacity-70">

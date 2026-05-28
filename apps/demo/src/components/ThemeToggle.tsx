@@ -35,10 +35,9 @@ function applyTheme(theme: Theme): "light" | "dark" {
   return resolved;
 }
 
+// First paint is set by the inline script in layout.tsx; this provider
+// takes over once React mounts.
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Default to "system" so first paint matches the OS preference. The
-  // inline script in layout.tsx hydrates the class earlier than React
-  // mounts; this state then takes over for runtime changes.
   const [theme, setThemeState] = useState<Theme>("system");
   const [resolved, setResolved] = useState<"light" | "dark">("light");
 
@@ -55,7 +54,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setResolved(applyTheme(initial));
   }, []);
 
-  // Follow OS theme when in "system" mode.
   useEffect(() => {
     if (theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -81,11 +79,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * Cycle button: light → dark → system → light. Single click is faster
- * than a dropdown for the common "I'm recording a demo, force dark"
- * case while still letting users land on "follow OS".
- */
+// Cycle: light → dark → system → light.
 export function ThemeToggle() {
   const { theme, resolved, setTheme } = useTheme();
 

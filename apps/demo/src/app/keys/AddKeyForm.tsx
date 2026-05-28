@@ -2,17 +2,20 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ZCASH_BLOCKS } from "@siwz/core";
+import { useToast } from "@/components/Toast";
+
+const DEFAULT_BIRTHDAY = String(ZCASH_BLOCKS.SAFE_RECENT_BIRTHDAY);
 
 export function AddKeyForm({ autoFocus = false }: { autoFocus?: boolean }) {
   const [label, setLabel] = useState("");
   const [ufvk, setUfvk] = useState("");
-  // Default to early-2026 height. Any modern shielded wallet exists
-  // past this; users with older funds can clear / lower the field.
-  const [birthday, setBirthday] = useState("2800000");
+  const [birthday, setBirthday] = useState(DEFAULT_BIRTHDAY);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const { toast } = useToast();
   const ufvkRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -43,7 +46,8 @@ export function AddKeyForm({ autoFocus = false }: { autoFocus?: boolean }) {
           }
           setLabel("");
           setUfvk("");
-          setBirthday("2800000");
+          setBirthday(DEFAULT_BIRTHDAY);
+          toast({ message: "Viewing key added — sync started.", tone: "success" });
           router.refresh();
         });
       }}

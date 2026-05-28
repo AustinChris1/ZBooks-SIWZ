@@ -29,11 +29,7 @@ interface CategoryDatum {
   value: number;
 }
 
-/**
- * Category palette tuned to read as warm + neutral rather than the
- * default recharts rainbow. Ordered so categories that tend to dominate
- * (contractor, expense) get the most-saturated swatches.
- */
+// Warm-neutral palette tuned to dodge recharts' default rainbow.
 const CAT_COLORS = [
   "#f4b728", // zcash yellow
   "#7a9b76", // sage
@@ -91,11 +87,7 @@ export function MonthlyPLChart({ data }: { data: MonthlyDatum[] }) {
   );
 }
 
-/**
- * Tiny inline area chart used next to /reports top-contractors. Renders
- * monthly spend for that contractor so reviewers see the cadence at a
- * glance (one-off vs steady invoicer) without leaving the row.
- */
+// Per-contractor monthly-spend sparkline.
 export function ContractorSparkline({ values }: { values: number[] }) {
   if (!values.length || values.every((v) => v === 0)) return null;
   const data = values.map((v, i) => ({ i, v }));

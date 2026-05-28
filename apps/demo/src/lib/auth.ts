@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { SiwzProvider } from "@siwz/next-auth";
-import type { Network } from "@siwz/core";
+import { ZCASH_BLOCKS, type Network } from "@siwz/core";
 import {
   onSnapAuthSuccess,
   validateSnapCredentials,
@@ -13,8 +13,7 @@ import { inspectUfvk } from "./ufvk";
 
 const SECRET = process.env.NEXTAUTH_SECRET;
 if (!SECRET) {
-  // We don't throw at module load because Next builds tsx import graphs
-  // ahead of running env-checks; warn instead and let authorize() fail.
+  // Warn rather than throw so Next can build its import graph before env-checks run.
   console.warn("[demo] NEXTAUTH_SECRET is not set — auth will fail.");
 }
 const SIWZ_DOMAIN = process.env.SIWZ_DOMAIN ?? "localhost:3000";
@@ -32,11 +31,8 @@ const memoProvider = CredentialsProvider({
   credentials: {
     identity: { label: "Identity", type: "text" },
     envelope: { label: "Envelope", type: "text" },
-    // Optional. When the user pasted a UFVK at the start of the memo
-    // ceremony, the client forwards it here so the server can attach
-    // it to /keys for this identity. The server validates that
-    // sha256(ufvk).slice(0,32) matches the anon-suffix of the identity,
-    // i.e. the client can't swap in someone else's UFVK.
+    // Optional: if the user pasted a UFVK at the start of the ceremony,
+    // the client forwards it here so we can auto-attach it to /keys.
     ufvk: { label: "UFVK", type: "text" },
   },
   async authorize(credentials) {
@@ -45,31 +41,19 @@ const memoProvider = CredentialsProvider({
       if (!c?.identity || !c.envelope) return null;
       if (!SECRET) return null;
 
-      // The envelope is HMAC'd by /api/auth/memo/poll (or /verify) after
-      // the chain confirmed the tx. Re-verify it here so a malicious
-      // page can't forge sessions by guessing identity values.
       const fingerprint = hashIdentity(c.identity);
       if (!verifySnapEnvelope({ fingerprint, ufvk: c.identity }, c.envelope, SECRET)) {
         console.warn("[memo] envelope HMAC mismatch");
         return null;
       }
 
-      // The identity is already the team address — don't re-derive it
-      // through snapIdentityFor (which would double-hash the anon
-      // prefix and produce a `snap:<hash-of-anon>` mismatch).
+      // Use c.identity directly — don't re-derive through snapIdentityFor
+      // (which would double-hash the anon prefix into snap:<hash-of-anon>).
       const identity = c.identity;
       ensureMember(identity);
 
-      // Auto-import the UFVK if the client forwarded one AND its hash
-      // matches the anon suffix of the identity. The match check is the
-      // anti-spoof: a client can't attach an arbitrary UFVK to someone
-      // else's identity.
-      //
-      // Default birthday to early 2026 (~block 2_800_000). The wrapper's
-      // own default is NU5 (1.7M) which is correct but slow on small
-      // VPSes — scanning a million extra blocks for a wallet that
-      // almost certainly didn't exist before 2025 wastes minutes. Power
-      // users can override via the Advanced section on AddKeyForm.
+      // Auto-import UFVK only when its hash matches the identity's anon
+      // suffix (anti-spoof: a client can't attach someone else's UFVK).
       const ufvk = (c.ufvk ?? "").trim();
       if (ufvk && identity.startsWith("anon:")) {
         const expectedSuffix = createHash("sha256").update(ufvk).digest("hex").slice(0, 32);
@@ -82,7 +66,7 @@ const memoProvider = CredentialsProvider({
                 owner: identity,
                 label: "SIWZ memo-challenge",
                 ufvk,
-                birthday: 2_800_000,
+                birthday: ZCASH_BLOCKS.SAFE_RECENT_BIRTHDAY,
               });
             }
           }
@@ -146,8 +130,7 @@ const snapProvider = CredentialsProvider({
 
 export const authOptions: NextAuthOptions = {
   providers: [
-    // SiwzProvider returns a credentials provider config object; NextAuth v4
-    // expects the provider to be wrapped with CredentialsProvider(...).
+    // SiwzProvider returns a config object; NextAuth v4 needs it wrapped in CredentialsProvider.
     CredentialsProvider(siwzConfig as Parameters<typeof CredentialsProvider>[0]),
     snapProvider,
     memoProvider,

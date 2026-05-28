@@ -10,9 +10,7 @@ export interface MonthBucket {
   count: number;
 }
 
-/**
- * Group transactions by calendar month (UTC). Returns most-recent first.
- */
+// Groups by calendar month (UTC), most-recent first.
 export function monthlyPL(txs: Transaction[]): MonthBucket[] {
   const buckets = new Map<string, MonthBucket>();
   for (const t of txs) {
@@ -37,11 +35,7 @@ export function monthlyPL(txs: Transaction[]): MonthBucket[] {
   return [...buckets.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
 
-/**
- * Filter a transaction list to a YYYY-MM..YYYY-MM range (inclusive on
- * both ends). When `from` or `to` is omitted the corresponding end is
- * left open. Both ends are interpreted in UTC to match `monthlyPL`.
- */
+// Inclusive YYYY-MM..YYYY-MM range (UTC). Omitted bounds = open-ended.
 export function filterByMonthRange(
   txs: Transaction[],
   from?: string,
@@ -49,17 +43,12 @@ export function filterByMonthRange(
 ): Transaction[] {
   if (!from && !to) return txs;
   const fromTs = from ? Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, 1) : -Infinity;
-  // `to` is INCLUSIVE — we add one month to capture the entire selected month.
-  const toTs = to
-    ? Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 1)
-    : Infinity;
+  // `to` inclusive: add one month to capture the entire selected month.
+  const toTs = to ? Date.UTC(+to.slice(0, 4), +to.slice(5, 7), 1) : Infinity;
   return txs.filter((t) => t.timestamp >= fromTs && t.timestamp < toTs);
 }
 
-/**
- * Build a CSV blob from transactions. Columns chosen to match what most
- * accountants (or QuickBooks/Xero import) expect.
- */
+// CSV shaped for QuickBooks / Xero import.
 export function transactionsCsv(txs: Transaction[]): string {
   const header = [
     "Date",

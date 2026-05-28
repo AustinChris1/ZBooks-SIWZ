@@ -1,13 +1,5 @@
-/**
- * Best-effort UFVK shape validator for ZBooks.
- *
- * UFVKs (Unified Full Viewing Keys per ZIP 316) are bech32m-encoded with
- * HRP "uview" (mainnet) or "uviewtest" (testnet). Full decoding requires
- * F4Jumble reversal + receiver-type parsing — out of scope here. We
- * accept anything that starts with a recognized HRP, is at least 60
- * chars, and uses only bech32 charset characters. Stricter validation
- * happens at sync time when a real lightwalletd is wired in.
- */
+// Shape-only UFVK validator. ZIP 316 full decoding (F4Jumble reversal +
+// receiver parsing) is out of scope; lightwalletd does the real check at sync time.
 
 const BECH32_ALPHABET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
 

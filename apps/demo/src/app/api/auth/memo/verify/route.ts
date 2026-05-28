@@ -1,25 +1,12 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { verifyMemoChallenge } from "@siwz/core";
 import { getDefaultExplorer } from "@/lib/explorer";
 import { signSnapEnvelope } from "@/lib/snap-auth";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Verify a memo-challenge:
- *   1. Take the user-supplied txid + the challenge token.
- *   2. Look up the tx via the configured block explorer.
- *   3. Check at least one of the tx's transparent outputs pays the
- *      exact (serviceAddress, amount) pair encoded in the token.
- *   4. If verified, return an HMAC envelope the client can hand to
- *      NextAuth's "memo" credentials provider for session creation.
- *
- * Notes:
- *   - Idempotent: caller may poll this endpoint with the same txid.
- *   - One-shot enforcement (rejecting reuse of the same txid) is the
- *     application's responsibility — for ZBooks the session creation
- *     itself is one-shot via NextAuth's signIn flow.
- */
+// Manual-txid fallback for the memo-challenge flow. Idempotent.
 export async function POST(req: Request) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) return NextResponse.json({ error: "server misconfigured" }, { status: 500 });
@@ -49,7 +36,6 @@ export async function POST(req: Request) {
     }, { status: 404 });
   }
 
-  // Try to match any of the tx outputs against the token.
   let matched = false;
   let lastErr: string | undefined;
   let identity: string | undefined;
@@ -74,8 +60,6 @@ export async function POST(req: Request) {
     }, { status: 400 });
   }
 
-  // Return a signed envelope so the client can hand verified credentials
-  // to NextAuth without re-asking the explorer on every callback hop.
   const envelope = signSnapEnvelope({ fingerprint: hashIdentity(identity), ufvk: identity }, secret);
   return NextResponse.json({
     ok: true,
@@ -87,10 +71,5 @@ export async function POST(req: Request) {
 }
 
 function hashIdentity(s: string): string {
-  // Stable 32-hex-char identifier so the snap/memo identity formats line up.
-  // Re-uses the snap session shape so the rest of ZBooks doesn't have to
-  // branch on auth method.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createHash } = require("node:crypto");
   return createHash("sha256").update(s).digest("hex").slice(0, 32);
 }

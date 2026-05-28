@@ -2,11 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./auth";
 import { ensureMember, getMember, type Role } from "./db";
 
-/**
- * Resolve the current signed-in user from the request context. Side-effect:
- * the first sign-in is auto-promoted to admin so a fresh deployment has
- * someone who can manage the team.
- */
+// Resolves the signed-in user. Side-effect: first ever sign-in becomes admin.
 export async function currentUser(): Promise<{ address: string; role: Role } | null> {
   const session = await getServerSession(authOptions);
   const address = (session?.user as { address?: string } | undefined)?.address;

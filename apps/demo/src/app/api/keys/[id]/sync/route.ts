@@ -4,17 +4,7 @@ import { syncUfvk, syncUfvkInBackground } from "@/lib/sync";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Manual refresh trigger for a single UFVK.
- *
- *   POST /api/keys/:id/sync           → fire-and-forget (returns immediately)
- *   POST /api/keys/:id/sync?wait=1    → blocking (waits for completion)
- *
- * The blocking form is used by tests + the demo "Sync now" button on a
- * freshly-imported key when we want the user to see the result before
- * navigating. The default is non-blocking because first-time syncs of
- * an active UFVK can take a couple of minutes.
- */
+// POST /api/keys/:id/sync (?wait=1 to block until done).
 export async function POST(
   req: Request,
   { params }: { params: { id: string } },

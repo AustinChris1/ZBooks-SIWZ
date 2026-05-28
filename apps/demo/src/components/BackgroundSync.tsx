@@ -4,17 +4,11 @@ import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 
-const INTERVAL_MS = 5 * 60_000; // every 5 min while a tab is open
+const INTERVAL_MS = 5 * 60_000;
 const STORAGE_KEY = "zbooks.lastBgSyncAt";
 
-/**
- * Periodically nudges /api/keys/sync-all in the background so the
- * dashboard stays fresh without the user clicking "Refresh all". The
- * timer is per-tab; the localStorage clamp prevents two open tabs from
- * doubling up. We also skip the kickoff entirely when no session is
- * present, when the tab is hidden, or when the user is on the home page
- * (no sense triggering syncs on the sign-in screen).
- */
+// Pings /api/keys/sync-all every 5min. Per-tab timer with a localStorage
+// clamp so multiple tabs don't double-fire. Skips when hidden / signed-out / on /.
 export function BackgroundSync() {
   const { status } = useSession();
   const pathname = usePathname();
@@ -31,19 +25,13 @@ export function BackgroundSync() {
         const last = Number(localStorage.getItem(STORAGE_KEY) ?? "0");
         if (Date.now() - last < INTERVAL_MS - 5_000) return;
         localStorage.setItem(STORAGE_KEY, String(Date.now()));
-      } catch {
-        /* private mode — still tick, just without dedup */
-      }
+      } catch { /* private mode — tick without dedup */ }
       try {
         const res = await fetch("/api/keys/sync-all", { method: "POST" });
         if (res.ok) router.refresh();
-      } catch {
-        /* network blip — try again next interval */
-      }
+      } catch { /* network blip — retry next interval */ }
     };
 
-    // Kick once shortly after mount so a long-running session gets a
-    // fresh sync within the first minute of returning to the tab.
     const initial = setTimeout(tick, 30_000);
     timerRef.current = setInterval(tick, INTERVAL_MS);
     return () => {

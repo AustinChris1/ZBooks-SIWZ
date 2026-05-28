@@ -6,23 +6,7 @@ import { createHash } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Auto-polling endpoint for the SIWZ memo-challenge flow.
- *
- *   POST /api/auth/memo/poll
- *   { token: "<from /issue>" }
- *
- * Inspects the token's mode marker and dispatches:
- *   - transparent-amount → scan recent transparent outputs to the
- *     service address; match by amount.
- *   - shielded-memo      → ask the shielded explorer (daemon RPC) for
- *     decrypted memos to the service address; match by nonce-in-memo.
- *
- * Response:
- *   200 { ok: true, identity, envelope, txid, mode }   ← matched
- *   202 { ok: false, retryable: true }                  ← keep polling
- *   400/500 on bad input / explorer errors
- */
+// POST { token } → 200 on match, 202 to keep polling, 4xx/5xx on error.
 export async function POST(req: Request) {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) return NextResponse.json({ error: "server misconfigured" }, { status: 500 });
@@ -36,7 +20,6 @@ export async function POST(req: Request) {
   const token = typeof body.token === "string" ? body.token : "";
   if (!token) return NextResponse.json({ error: "token is required" }, { status: 400 });
 
-  // Peek at the payload to learn the recipient + mode.
   const parts = token.split(".");
   if (parts.length !== 2) return NextResponse.json({ error: "malformed token" }, { status: 400 });
   let recipient: string;
