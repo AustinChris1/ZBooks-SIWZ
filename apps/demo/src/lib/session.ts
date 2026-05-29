@@ -7,7 +7,7 @@ export async function currentUser(): Promise<{ address: string; role: Role } | n
   const session = await getServerSession(authOptions);
   const address = (session?.user as { address?: string } | undefined)?.address;
   if (!address) return null;
-  const role = ensureMember(address);
+  const role = await ensureMember(address);
   return { address, role };
 }
 

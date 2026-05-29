@@ -9,10 +9,11 @@ import { CategorySplitChart, ContractorSparkline, MonthlyPLChart } from "./Repor
 interface Props {
   allTxs: Transaction[];
   counterpartyLabels: Record<string, string>;
+  priceByDate: Record<string, number>;
 }
 
 // Date-range filter drives KPIs, charts, monthly table, contractors, and export URL.
-export function ReportsView({ allTxs, counterpartyLabels }: Props) {
+export function ReportsView({ allTxs, counterpartyLabels, priceByDate }: Props) {
   const availableMonths = useMemo(() => {
     const set = new Set<string>();
     for (const t of allTxs) {
@@ -30,6 +31,30 @@ export function ReportsView({ allTxs, counterpartyLabels }: Props) {
     [allTxs, from, to],
   );
   const months = useMemo(() => monthlyPL(txs), [txs]);
+
+  const fmtUsd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+  // Fiat valuation: value each tx at its date's ZEC/USD price. Best effort,
+  // some dates may be unpriced if the price feed was unavailable.
+  const usd = useMemo(() => {
+    let inflow = 0;
+    let outflow = 0;
+    let priced = 0;
+    const netByMonth = new Map<string, number>();
+    for (const t of txs) {
+      const p = priceByDate[new Date(t.timestamp).toISOString().slice(0, 10)];
+      if (p == null) continue;
+      priced++;
+      const v = t.amount_zec * p; // signed; outflows are negative
+      if (t.amount_zec >= 0) inflow += v;
+      else outflow += -v;
+      const d = new Date(t.timestamp);
+      const m = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      netByMonth.set(m, (netByMonth.get(m) ?? 0) + v);
+    }
+    return { inflow, outflow, net: inflow - outflow, priced, netByMonth };
+  }, [txs, priceByDate]);
+  const hasUsd = usd.priced > 0;
 
   // Category spend totals → donut
   const categoryChartData = useMemo(() => {
@@ -120,11 +145,12 @@ export function ReportsView({ allTxs, counterpartyLabels }: Props) {
       ) : (
         <>
           <section className="grid gap-3 sm:grid-cols-3">
-            <Kpi label="Total inflow" value={`${totalInflow.toLocaleString()} ZEC`} tone="pos" />
-            <Kpi label="Total outflow" value={`${totalOutflow.toLocaleString()} ZEC`} tone="neg" />
+            <Kpi label="Total inflow" value={`${totalInflow.toLocaleString()} ZEC`} sub={hasUsd ? fmtUsd(usd.inflow) : undefined} tone="pos" />
+            <Kpi label="Total outflow" value={`${totalOutflow.toLocaleString()} ZEC`} sub={hasUsd ? fmtUsd(usd.outflow) : undefined} tone="neg" />
             <Kpi
               label="Net"
               value={`${(totalInflow - totalOutflow).toLocaleString()} ZEC`}
+              sub={hasUsd ? fmtUsd(usd.net) : undefined}
               tone={totalInflow >= totalOutflow ? "pos" : "neg"}
             />
           </section>
@@ -164,6 +190,7 @@ export function ReportsView({ allTxs, counterpartyLabels }: Props) {
                     <th className="py-2.5 px-3 text-right">Inflow</th>
                     <th className="py-2.5 px-3 text-right">Outflow</th>
                     <th className="py-2.5 px-3 text-right">Net</th>
+                    {hasUsd && <th className="py-2.5 px-3 text-right">Net (USD)</th>}
                     <th className="py-2.5 px-3 text-right">#</th>
                     <th className="py-2.5 px-3">Top categories</th>
                   </tr>
@@ -190,6 +217,11 @@ export function ReportsView({ allTxs, counterpartyLabels }: Props) {
                           {m.net >= 0 ? "+" : ""}
                           {m.net.toLocaleString()}
                         </td>
+                        {hasUsd && (
+                          <td className="py-2 px-3 text-right font-mono text-neutral-500">
+                            {usd.netByMonth.has(m.month) ? fmtUsd(usd.netByMonth.get(m.month)!) : "—"}
+                          </td>
+                        )}
                         <td className="py-2 px-3 text-right text-neutral-500">{m.count}</td>
                         <td className="py-2 px-3 text-xs text-neutral-500">{cats || "—"}</td>
                       </tr>
@@ -277,7 +309,7 @@ function DateRange({
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone: "pos" | "neg" | "neutral" }) {
+function Kpi({ label, value, tone, sub }: { label: string; value: string; tone: "pos" | "neg" | "neutral"; sub?: string }) {
   const toneCls =
     tone === "pos" ? "text-emerald-700 dark:text-emerald-400"
     : tone === "neg" ? "text-red-700 dark:text-red-400"
@@ -286,6 +318,7 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone: "pos"
     <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/40 p-4">
       <div className="text-[11px] uppercase tracking-wider text-neutral-500">{label}</div>
       <div className={`text-xl font-semibold font-mono mt-1 ${toneCls}`}>{value}</div>
+      {sub && <div className="text-xs font-mono text-neutral-500 mt-0.5">{sub}</div>}
     </div>
   );
 }

@@ -11,7 +11,7 @@ export default async function TeamPage() {
   const user = await currentUser();
   if (!user) redirect("/");
 
-  const team = listMembers();
+  const team = await listMembers();
   const canManage = canManageTeam(user.role);
   const demoMode = process.env.SIWZ_DEMO === "1";
 

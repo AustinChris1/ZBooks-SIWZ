@@ -48,12 +48,15 @@ export function filterByMonthRange(
   return txs.filter((t) => t.timestamp >= fromTs && t.timestamp < toTs);
 }
 
-// CSV shaped for QuickBooks / Xero import.
-export function transactionsCsv(txs: Transaction[]): string {
+// CSV shaped for QuickBooks / Xero import. When priceByDate (YYYY-MM-DD ->
+// ZEC/USD) is supplied, two fiat columns are added for tax-ready books.
+export function transactionsCsv(txs: Transaction[], priceByDate?: Record<string, number>): string {
+  const withUsd = Boolean(priceByDate);
   const header = [
     "Date",
     "Direction",
     "Amount (ZEC)",
+    ...(withUsd ? ["ZEC/USD", "Amount (USD)"] : []),
     "Category",
     "Counterparty",
     "Memo",
@@ -68,11 +71,17 @@ export function transactionsCsv(txs: Transaction[]): string {
   };
   const lines = [header.join(",")];
   for (const t of txs) {
+    const iso = new Date(t.timestamp).toISOString();
+    const price = withUsd ? priceByDate![iso.slice(0, 10)] : undefined;
+    const usdCols = withUsd
+      ? [escape(price ?? ""), escape(price != null ? (t.amount_zec * price).toFixed(2) : "")]
+      : [];
     lines.push(
       [
-        escape(new Date(t.timestamp).toISOString()),
+        escape(iso),
         escape(t.direction.toUpperCase()),
         escape(t.amount_zec),
+        ...usdCols,
         escape(t.tag ? CATEGORY_LABEL[t.tag] : ""),
         escape(t.counterparty),
         escape(t.memo),

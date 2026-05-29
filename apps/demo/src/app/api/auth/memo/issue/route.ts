@@ -51,6 +51,19 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 
+  // Transparent-amount mode binds a sign-in only to the payment amount, drawn
+  // from a small space and with no per-token replay store, so it is not
+  // auth-grade. Require a shielded service address (the SIWZ:<nonce> memo is the
+  // real binding) unless an operator explicitly opts in.
+  if (mode === "transparent-amount" && process.env.SIWZ_ALLOW_TRANSPARENT_AUTH !== "1") {
+    return NextResponse.json({
+      error:
+        "Transparent-amount sign-in is disabled because it is weak (small amount-nonce space, no replay protection). " +
+        "Use a shielded service address (zs.../u1...) so the encrypted memo carries the nonce, " +
+        "or set SIWZ_ALLOW_TRANSPARENT_AUTH=1 to opt in for testing.",
+    }, { status: 400 });
+  }
+
   // Shielded mode needs a memo-decrypting backend (mock, daemon, or wrapper).
   if (mode === "shielded-memo") {
     const shieldedExplorer = getShieldedExplorer();

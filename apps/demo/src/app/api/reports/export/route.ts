@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listTransactions } from "@/lib/db";
 import { filterByMonthRange, transactionsCsv } from "@/lib/reports";
+import { zecUsdForTimestamps } from "@/lib/fiat";
 import { requireRole } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,9 @@ export async function GET(req: Request) {
   const from = valid(url.searchParams.get("from"));
   const to = valid(url.searchParams.get("to"));
 
-  const filtered = filterByMonthRange(listTransactions(), from, to);
-  const csv = transactionsCsv(filtered);
+  const filtered = filterByMonthRange(await listTransactions(), from, to);
+  const priceByDate = Object.fromEntries((await zecUsdForTimestamps(filtered.map((t) => t.timestamp))).entries());
+  const csv = transactionsCsv(filtered, priceByDate);
 
   const stamp = from || to
     ? `${from ?? "start"}_${to ?? "now"}`

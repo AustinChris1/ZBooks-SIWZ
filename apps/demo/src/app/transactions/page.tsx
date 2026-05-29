@@ -10,10 +10,10 @@ export default async function TransactionsPage() {
   const user = await currentUser();
   if (!user) redirect("/");
 
-  const txs = listTransactions();
-  const keys = listKeys();
+  const txs = await listTransactions();
+  const keys = await listKeys();
   const keyLabels = Object.fromEntries(keys.map((k) => [k.id, k.label]));
-  const counterpartyLabels = Object.fromEntries(counterpartyLabelMap().entries());
+  const counterpartyLabels = Object.fromEntries((await counterpartyLabelMap()).entries());
   const editable = canTag(user.role);
   const untaggedCount = txs.filter((t) => !t.tag).length;
 

@@ -1,6 +1,5 @@
-import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
-import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { createClient, type Client, type Row } from "@libsql/client/web";
 import {
   CATEGORY_LABEL,
   type Category,
@@ -18,8 +17,10 @@ import {
   type WorkStatus,
 } from "./types";
 
-// JSON file store. Types + CATEGORY_LABEL live in ./types so client
-// components can import them without dragging node:fs into the bundle.
+// libSQL (Turso) store. Async, SQL-backed, so it persists on Vercel's
+// ephemeral filesystem and gives real per-row writes instead of the old
+// read-modify-write-the-whole-file race. Types live in ./types so client
+// components can import them without pulling this server module into the bundle.
 export { CATEGORY_LABEL };
 export type {
   Category,
@@ -37,185 +38,343 @@ export type {
   WorkStatus,
 };
 
-const DATA_DIR = join(process.cwd(), "data");
-const DB_PATH = process.env.DATA_PATH ?? join(DATA_DIR, "zbooks.json");
+let _client: Client | undefined;
+let _ready: Promise<void> | undefined;
 
-if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-
-interface FileShape {
-  ufvks: Ufvk[];
-  transactions: Transaction[];
-  team: TeamMember[];
-  counterparties: Counterparty[];
-  payees: Payee[];
-  payout_runs: PayoutRun[];
-  payout_items: PayoutLineItem[];
+function rawClient(): Client {
+  if (_client) return _client;
+  const url = process.env.TURSO_DATABASE_URL;
+  if (!url) throw new Error("TURSO_DATABASE_URL is not set");
+  _client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+  return _client;
 }
 
-const EMPTY: FileShape = {
-  ufvks: [],
-  transactions: [],
-  team: [],
-  counterparties: [],
-  payees: [],
-  payout_runs: [],
-  payout_items: [],
-};
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS team (address TEXT PRIMARY KEY, role TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS ufvks (id TEXT PRIMARY KEY, owner TEXT, label TEXT NOT NULL, ufvk TEXT NOT NULL, is_primary INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, sync_status TEXT NOT NULL DEFAULT 'idle', last_synced_at INTEGER, last_synced_block INTEGER, last_sync_error TEXT, last_tx_count INTEGER, last_chain_tip INTEGER, wallet_birthday INTEGER, birthday INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, ufvk_id TEXT NOT NULL, txid TEXT NOT NULL, direction TEXT NOT NULL, amount_zec REAL NOT NULL, counterparty TEXT, memo TEXT, timestamp INTEGER NOT NULL, block_height INTEGER, tag TEXT, notes TEXT, tagged_by TEXT, tagged_at INTEGER)`,
+  `CREATE INDEX IF NOT EXISTS idx_tx_ufvk_txid ON transactions (ufvk_id, txid)`,
+  `CREATE TABLE IF NOT EXISTS counterparties (address TEXT PRIMARY KEY, label TEXT NOT NULL, notes TEXT, added_by TEXT, added_at INTEGER NOT NULL, updated_at INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS payees (id TEXT PRIMARY KEY, label TEXT NOT NULL, address TEXT NOT NULL, notes TEXT, added_by TEXT, added_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS payout_runs (id TEXT PRIMARY KEY, title TEXT NOT NULL, source_ufvk_id TEXT, created_by TEXT, created_at INTEGER NOT NULL, status TEXT NOT NULL, sent_at INTEGER, note TEXT)`,
+  `CREATE TABLE IF NOT EXISTS payout_items (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payee_id TEXT, label TEXT NOT NULL, address TEXT NOT NULL, amount_zec REAL NOT NULL, memo TEXT, work_status TEXT NOT NULL, pay_status TEXT NOT NULL, txid TEXT, paid_at INTEGER, paid_block INTEGER, reconciled INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS fiat_prices (date TEXT PRIMARY KEY, usd REAL NOT NULL, fetched_at INTEGER NOT NULL)`,
+];
 
-function read(): FileShape {
-  if (!existsSync(DB_PATH)) return structuredClone(EMPTY);
-  try {
-    const parsed = JSON.parse(readFileSync(DB_PATH, "utf8")) as Partial<FileShape>;
-    return {
-      ufvks: (parsed.ufvks ?? []).map((k) => ({
-        ...k,
-        sync_status: (k.sync_status ?? "idle") as SyncStatus,
-      })),
-      transactions: parsed.transactions ?? [],
-      team: parsed.team ?? [],
-      counterparties: parsed.counterparties ?? [],
-      payees: parsed.payees ?? [],
-      payout_runs: parsed.payout_runs ?? [],
-      payout_items: parsed.payout_items ?? [],
-    };
-  } catch {
-    return structuredClone(EMPTY);
+// Lazily create the client and run the (idempotent) schema once per process.
+async function db(): Promise<Client> {
+  const c = rawClient();
+  if (!_ready) _ready = c.batch(SCHEMA, "write").then(() => undefined);
+  await _ready;
+  return c;
+}
+
+// ---- value coercion ---------------------------------------------------------
+
+function n(v: Row[string]): number | undefined {
+  return v === null || v === undefined ? undefined : Number(v);
+}
+function s(v: Row[string]): string | undefined {
+  return v === null || v === undefined ? undefined : String(v);
+}
+
+function toUfvk(r: Row): Ufvk {
+  return {
+    id: String(r.id),
+    owner: String(r.owner ?? ""),
+    label: String(r.label),
+    ufvk: String(r.ufvk),
+    primary: Number(r.is_primary) === 1,
+    created_at: Number(r.created_at),
+    sync_status: (r.sync_status as SyncStatus) ?? "idle",
+    last_synced_at: n(r.last_synced_at),
+    last_synced_block: n(r.last_synced_block),
+    last_sync_error: s(r.last_sync_error),
+    last_tx_count: n(r.last_tx_count),
+    last_chain_tip: n(r.last_chain_tip),
+    wallet_birthday: n(r.wallet_birthday),
+    birthday: n(r.birthday),
+  };
+}
+
+function toTx(r: Row): Transaction {
+  return {
+    id: String(r.id),
+    ufvk_id: String(r.ufvk_id),
+    txid: String(r.txid),
+    direction: r.direction === "out" ? "out" : "in",
+    amount_zec: Number(r.amount_zec),
+    counterparty: s(r.counterparty),
+    memo: s(r.memo),
+    timestamp: Number(r.timestamp),
+    block_height: n(r.block_height),
+    tag: (s(r.tag) as Category | undefined),
+    notes: s(r.notes),
+    tagged_by: s(r.tagged_by),
+    tagged_at: n(r.tagged_at),
+  };
+}
+
+function toCounterparty(r: Row): Counterparty {
+  return {
+    address: String(r.address),
+    label: String(r.label),
+    notes: s(r.notes),
+    added_by: String(r.added_by ?? ""),
+    added_at: Number(r.added_at),
+    updated_at: n(r.updated_at),
+  };
+}
+
+function toPayee(r: Row): Payee {
+  return {
+    id: String(r.id),
+    label: String(r.label),
+    address: String(r.address),
+    notes: s(r.notes),
+    added_by: String(r.added_by ?? ""),
+    added_at: Number(r.added_at),
+    archived: Number(r.archived) === 1 ? true : undefined,
+  };
+}
+
+function toRun(r: Row): PayoutRun {
+  return {
+    id: String(r.id),
+    title: String(r.title),
+    source_ufvk_id: s(r.source_ufvk_id),
+    created_by: String(r.created_by ?? ""),
+    created_at: Number(r.created_at),
+    status: r.status as PayoutRunStatus,
+    sent_at: n(r.sent_at),
+    note: s(r.note),
+  };
+}
+
+function toItem(r: Row): PayoutLineItem {
+  return {
+    id: String(r.id),
+    run_id: String(r.run_id),
+    payee_id: s(r.payee_id),
+    label: String(r.label),
+    address: String(r.address),
+    amount_zec: Number(r.amount_zec),
+    memo: s(r.memo),
+    work_status: r.work_status as WorkStatus,
+    pay_status: r.pay_status as PayStatus,
+    txid: s(r.txid),
+    paid_at: n(r.paid_at),
+    paid_block: n(r.paid_block),
+    reconciled: Number(r.reconciled) === 1 ? true : undefined,
+  };
+}
+
+function toMember(r: Row): TeamMember {
+  return {
+    address: String(r.address),
+    role: r.role as Role,
+    added_by: String(r.added_by ?? ""),
+    added_at: Number(r.added_at),
+  };
+}
+
+// ---- Team -------------------------------------------------------------------
+
+const ADMIN_ALLOWLIST = (process.env.SIWZ_ADMIN_ADDRESSES ?? "")
+  .split(",")
+  .map((x) => x.trim())
+  .filter(Boolean);
+
+export async function ensureMember(address: string): Promise<Role> {
+  const c = await db();
+  const found = await c.execute({ sql: "SELECT role FROM team WHERE address = ?", args: [address] });
+  if (found.rows.length) return found.rows[0].role as Role;
+
+  let role: Role;
+  let addedBy: string;
+  if (ADMIN_ALLOWLIST.includes(address)) {
+    role = "admin";
+    addedBy = "allowlist";
+  } else {
+    const count = await c.execute("SELECT COUNT(*) AS num FROM team");
+    const num = Number(count.rows[0].num);
+    if (ADMIN_ALLOWLIST.length === 0 && num === 0) {
+      role = "admin";
+      addedBy = "self";
+    } else {
+      role = "viewer";
+      addedBy = "auto";
+    }
   }
-}
 
-function write(state: FileShape): void {
-  // Atomic-ish: write to a tmp file then rename.
-  const tmp = `${DB_PATH}.tmp`;
-  writeFileSync(tmp, JSON.stringify(state, null, 2), "utf8");
-  renameSync(tmp, DB_PATH);
-}
-
-// First address to sign in is promoted to admin so a fresh deploy has someone who can manage the team.
-export function ensureMember(address: string): Role {
-  const state = read();
-  const existing = state.team.find((m) => m.address === address);
-  if (existing) return existing.role;
-  const role: Role = state.team.length === 0 ? "admin" : "viewer";
-  state.team.push({
-    address,
-    role,
-    added_by: state.team.length === 0 ? "self" : "auto",
-    added_at: Date.now(),
+  await c.execute({
+    sql: "INSERT INTO team (address, role, added_by, added_at) VALUES (?, ?, ?, ?) ON CONFLICT(address) DO NOTHING",
+    args: [address, role, addedBy, Date.now()],
   });
-  write(state);
-  return role;
+  // A concurrent insert may have won; return whatever actually persisted.
+  const final = await c.execute({ sql: "SELECT role FROM team WHERE address = ?", args: [address] });
+  return (final.rows[0]?.role as Role) ?? role;
 }
 
-export function getMember(address: string): TeamMember | undefined {
-  return read().team.find((m) => m.address === address);
+export async function getMember(address: string): Promise<TeamMember | undefined> {
+  const c = await db();
+  const rs = await c.execute({ sql: "SELECT * FROM team WHERE address = ?", args: [address] });
+  return rs.rows[0] ? toMember(rs.rows[0]) : undefined;
 }
 
-export function listMembers(): TeamMember[] {
-  return [...read().team].sort((a, b) => a.added_at - b.added_at);
+export async function listMembers(): Promise<TeamMember[]> {
+  const c = await db();
+  const rs = await c.execute("SELECT * FROM team ORDER BY added_at ASC");
+  return rs.rows.map(toMember);
 }
 
-export function setRole(address: string, role: Role): void {
-  const state = read();
-  const m = state.team.find((x) => x.address === address);
-  if (!m) throw new Error(`Address not in team: ${address}`);
-  m.role = role;
-  write(state);
+export async function setRole(address: string, role: Role): Promise<void> {
+  const c = await db();
+  const rs = await c.execute({ sql: "UPDATE team SET role = ? WHERE address = ?", args: [role, address] });
+  if (rs.rowsAffected === 0) throw new Error(`Address not in team: ${address}`);
 }
 
-export function addTeamMember(address: string, role: Role, addedBy: string): TeamMember {
-  const state = read();
-  if (state.team.some((m) => m.address === address)) {
-    throw new Error("Address already on team");
-  }
+export async function addTeamMember(address: string, role: Role, addedBy: string): Promise<TeamMember> {
+  const c = await db();
+  const exists = await c.execute({ sql: "SELECT 1 FROM team WHERE address = ?", args: [address] });
+  if (exists.rows.length) throw new Error("Address already on team");
   const m: TeamMember = { address, role, added_by: addedBy, added_at: Date.now() };
-  state.team.push(m);
-  write(state);
+  await c.execute({
+    sql: "INSERT INTO team (address, role, added_by, added_at) VALUES (?, ?, ?, ?)",
+    args: [m.address, m.role, m.added_by, m.added_at],
+  });
   return m;
 }
 
-export function removeMember(address: string): void {
-  const state = read();
-  state.team = state.team.filter((m) => m.address !== address);
-  write(state);
+export async function removeMember(address: string): Promise<void> {
+  const c = await db();
+  await c.execute({ sql: "DELETE FROM team WHERE address = ?", args: [address] });
 }
 
-export function listKeys(): Ufvk[] {
-  return [...read().ufvks].sort((a, b) => a.created_at - b.created_at);
+// ---- Viewing keys -----------------------------------------------------------
+
+export async function listKeys(): Promise<Ufvk[]> {
+  const c = await db();
+  const rs = await c.execute("SELECT * FROM ufvks ORDER BY created_at ASC");
+  return rs.rows.map(toUfvk);
 }
 
-export function addKey(input: {
+export async function addKey(input: {
   owner: string;
   label: string;
   ufvk: string;
   birthday?: number;
-}): Ufvk {
-  const state = read();
-  const id = randomUUID();
+}): Promise<Ufvk> {
+  const c = await db();
+  const count = await c.execute("SELECT COUNT(*) AS num FROM ufvks");
+  const isFirst = Number(count.rows[0].num) === 0;
   const key: Ufvk = {
-    id,
+    id: randomUUID(),
     owner: input.owner,
     label: input.label.trim() || "Untitled key",
     ufvk: input.ufvk.trim(),
-    primary: state.ufvks.length === 0,
+    primary: isFirst,
     created_at: Date.now(),
     sync_status: "idle",
     ...(Number.isFinite(input.birthday) ? { birthday: input.birthday } : {}),
   };
-  state.ufvks.push(key);
-  write(state);
+  await c.execute({
+    sql: "INSERT INTO ufvks (id, owner, label, ufvk, is_primary, created_at, sync_status, birthday) VALUES (?, ?, ?, ?, ?, ?, 'idle', ?)",
+    args: [key.id, key.owner, key.label, key.ufvk, isFirst ? 1 : 0, key.created_at, key.birthday ?? null],
+  });
   return key;
 }
 
-export function getKey(id: string): Ufvk | undefined {
-  return read().ufvks.find((k) => k.id === id);
+export async function getKey(id: string): Promise<Ufvk | undefined> {
+  const c = await db();
+  const rs = await c.execute({ sql: "SELECT * FROM ufvks WHERE id = ?", args: [id] });
+  return rs.rows[0] ? toUfvk(rs.rows[0]) : undefined;
 }
 
-export function updateKeySyncStatus(
+const SYNC_COLUMNS: Record<string, string> = {
+  sync_status: "sync_status",
+  last_synced_at: "last_synced_at",
+  last_synced_block: "last_synced_block",
+  last_sync_error: "last_sync_error",
+  last_tx_count: "last_tx_count",
+  last_chain_tip: "last_chain_tip",
+  wallet_birthday: "wallet_birthday",
+};
+
+export async function updateKeySyncStatus(
   id: string,
   patch: Partial<Pick<Ufvk, "sync_status" | "last_synced_at" | "last_synced_block" | "last_sync_error" | "last_tx_count" | "last_chain_tip" | "wallet_birthday">>,
-): void {
-  const state = read();
-  const k = state.ufvks.find((x) => x.id === id);
-  if (!k) return;
-  Object.assign(k, patch);
-  write(state);
+): Promise<void> {
+  const sets: string[] = [];
+  const args: (string | number | null)[] = [];
+  for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
+    const col = SYNC_COLUMNS[k];
+    if (!col) continue;
+    sets.push(`${col} = ?`);
+    const v = patch[k];
+    args.push(v === undefined ? null : (v as string | number));
+  }
+  if (sets.length === 0) return;
+  args.push(id);
+  const c = await db();
+  await c.execute({ sql: `UPDATE ufvks SET ${sets.join(", ")} WHERE id = ?`, args });
 }
 
-export function removeKey(id: string): void {
-  const state = read();
-  state.ufvks = state.ufvks.filter((k) => k.id !== id);
-  state.transactions = state.transactions.filter((t) => t.ufvk_id !== id);
-  write(state);
+export async function removeKey(id: string): Promise<void> {
+  const c = await db();
+  await c.batch(
+    [
+      { sql: "DELETE FROM transactions WHERE ufvk_id = ?", args: [id] },
+      { sql: "DELETE FROM ufvks WHERE id = ?", args: [id] },
+    ],
+    "write",
+  );
 }
 
-export function setPrimaryKey(id: string): void {
-  const state = read();
-  for (const k of state.ufvks) k.primary = k.id === id;
-  write(state);
+export async function setPrimaryKey(id: string): Promise<void> {
+  const c = await db();
+  await c.execute({ sql: "UPDATE ufvks SET is_primary = CASE WHEN id = ? THEN 1 ELSE 0 END", args: [id] });
 }
 
-export function listTransactions(): Transaction[] {
-  return [...read().transactions].sort((a, b) => b.timestamp - a.timestamp);
+export async function updateKeyLabel(id: string, label: string): Promise<void> {
+  const trimmed = label.trim();
+  if (!trimmed) return;
+  const c = await db();
+  await c.execute({ sql: "UPDATE ufvks SET label = ? WHERE id = ?", args: [trimmed.slice(0, 80), id] });
 }
 
-export function tagTransaction(id: string, input: {
+// ---- Transactions -----------------------------------------------------------
+
+export async function listTransactions(): Promise<Transaction[]> {
+  const c = await db();
+  const rs = await c.execute("SELECT * FROM transactions ORDER BY timestamp DESC");
+  return rs.rows.map(toTx);
+}
+
+export async function tagTransaction(id: string, input: {
   tag?: Category;
   notes?: string;
   taggedBy: string;
-}): Transaction {
-  const state = read();
-  const t = state.transactions.find((x) => x.id === id);
-  if (!t) throw new Error(`No such transaction: ${id}`);
-  if (input.tag !== undefined) t.tag = input.tag;
-  if (input.notes !== undefined) t.notes = input.notes;
-  t.tagged_by = input.taggedBy;
-  t.tagged_at = Date.now();
-  write(state);
-  return t;
+}): Promise<Transaction> {
+  const c = await db();
+  const sets = ["tagged_by = ?", "tagged_at = ?"];
+  const args: (string | number | null)[] = [input.taggedBy, Date.now()];
+  if (input.tag !== undefined) {
+    sets.unshift("tag = ?");
+    args.unshift(input.tag);
+  }
+  if (input.notes !== undefined) {
+    sets.unshift("notes = ?");
+    args.unshift(input.notes);
+  }
+  args.push(id);
+  const rs = await c.execute({ sql: `UPDATE transactions SET ${sets.join(", ")} WHERE id = ? RETURNING *`, args });
+  if (!rs.rows[0]) throw new Error(`No such transaction: ${id}`);
+  return toTx(rs.rows[0]);
 }
 
 // Existing rows keep their tag / notes / id so a re-sync doesn't clobber user-applied categorisation.
-export function upsertTransactions(
+export async function upsertTransactions(
   ufvkId: string,
   incoming: Array<{
     txid: string;
@@ -226,115 +385,137 @@ export function upsertTransactions(
     timestamp: number;
     block_height?: number;
   }>,
-): { inserted: number; updated: number } {
-  const state = read();
+): Promise<{ inserted: number; updated: number }> {
+  const c = await db();
   let inserted = 0;
   let updated = 0;
-  for (const incoming_tx of incoming) {
-    const existing = state.transactions.find(
-      (t) => t.ufvk_id === ufvkId && t.txid === incoming_tx.txid,
-    );
-    if (existing) {
-      existing.direction = incoming_tx.direction;
-      existing.amount_zec = incoming_tx.amount_zec;
-      existing.timestamp = incoming_tx.timestamp;
-      if (incoming_tx.counterparty !== undefined) existing.counterparty = incoming_tx.counterparty;
-      if (incoming_tx.memo !== undefined) existing.memo = incoming_tx.memo;
-      if (incoming_tx.block_height !== undefined) existing.block_height = incoming_tx.block_height;
+  for (const tx of incoming) {
+    const existing = await c.execute({
+      sql: "SELECT id FROM transactions WHERE ufvk_id = ? AND txid = ?",
+      args: [ufvkId, tx.txid],
+    });
+    if (existing.rows.length) {
+      await c.execute({
+        sql: "UPDATE transactions SET direction = ?, amount_zec = ?, timestamp = ?, counterparty = COALESCE(?, counterparty), memo = COALESCE(?, memo), block_height = COALESCE(?, block_height) WHERE id = ?",
+        args: [
+          tx.direction,
+          tx.amount_zec,
+          tx.timestamp,
+          tx.counterparty ?? null,
+          tx.memo ?? null,
+          tx.block_height ?? null,
+          String(existing.rows[0].id),
+        ],
+      });
       updated++;
     } else {
-      state.transactions.push({
-        id: randomUUID(),
-        ufvk_id: ufvkId,
-        ...incoming_tx,
+      await c.execute({
+        sql: "INSERT INTO transactions (id, ufvk_id, txid, direction, amount_zec, counterparty, memo, timestamp, block_height) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        args: [
+          randomUUID(),
+          ufvkId,
+          tx.txid,
+          tx.direction,
+          tx.amount_zec,
+          tx.counterparty ?? null,
+          tx.memo ?? null,
+          tx.timestamp,
+          tx.block_height ?? null,
+        ],
       });
       inserted++;
     }
   }
-  write(state);
   return { inserted, updated };
 }
 
-export function listCounterparties(): Counterparty[] {
-  return [...read().counterparties].sort((a, b) => a.label.localeCompare(b.label));
+// ---- Counterparties ---------------------------------------------------------
+
+export async function listCounterparties(): Promise<Counterparty[]> {
+  const c = await db();
+  const rs = await c.execute("SELECT * FROM counterparties ORDER BY label COLLATE NOCASE ASC");
+  return rs.rows.map(toCounterparty);
 }
 
-export function getCounterparty(address: string): Counterparty | undefined {
-  return read().counterparties.find((c) => c.address === address);
+export async function getCounterparty(address: string): Promise<Counterparty | undefined> {
+  const c = await db();
+  const rs = await c.execute({ sql: "SELECT * FROM counterparties WHERE address = ?", args: [address] });
+  return rs.rows[0] ? toCounterparty(rs.rows[0]) : undefined;
 }
 
 // Empty label removes the mapping.
-export function upsertCounterparty(input: {
+export async function upsertCounterparty(input: {
   address: string;
   label: string;
   notes?: string;
   by: string;
-}): Counterparty | null {
-  const state = read();
+}): Promise<Counterparty | null> {
   const address = input.address.trim();
   const label = input.label.trim();
   if (!address) throw new Error("address required");
+  const c = await db();
 
-  const idx = state.counterparties.findIndex((c) => c.address === address);
   if (!label) {
-    if (idx >= 0) {
-      state.counterparties.splice(idx, 1);
-      write(state);
-    }
+    await c.execute({ sql: "DELETE FROM counterparties WHERE address = ?", args: [address] });
     return null;
   }
 
-  if (idx >= 0) {
-    const existing = state.counterparties[idx];
-    existing.label = label;
-    if (input.notes !== undefined) existing.notes = input.notes || undefined;
-    existing.updated_at = Date.now();
-    write(state);
-    return existing;
+  const existing = await c.execute({ sql: "SELECT * FROM counterparties WHERE address = ?", args: [address] });
+  if (existing.rows.length) {
+    const notesProvided = input.notes !== undefined;
+    await c.execute({
+      sql: `UPDATE counterparties SET label = ?, updated_at = ?${notesProvided ? ", notes = ?" : ""} WHERE address = ?`,
+      args: notesProvided
+        ? [label, Date.now(), input.notes!.trim() || null, address]
+        : [label, Date.now(), address],
+    });
+  } else {
+    await c.execute({
+      sql: "INSERT INTO counterparties (address, label, notes, added_by, added_at) VALUES (?, ?, ?, ?, ?)",
+      args: [address, label, input.notes?.trim() || null, input.by, Date.now()],
+    });
   }
-
-  const made: Counterparty = {
-    address,
-    label,
-    notes: input.notes?.trim() || undefined,
-    added_by: input.by,
-    added_at: Date.now(),
-  };
-  state.counterparties.push(made);
-  write(state);
-  return made;
+  const rs = await c.execute({ sql: "SELECT * FROM counterparties WHERE address = ?", args: [address] });
+  return toCounterparty(rs.rows[0]);
 }
 
-export function counterpartyLabelMap(): Map<string, string> {
-  return new Map(read().counterparties.map((c) => [c.address, c.label]));
+export async function counterpartyLabelMap(): Promise<Map<string, string>> {
+  const c = await db();
+  const rs = await c.execute("SELECT address, label FROM counterparties");
+  return new Map(rs.rows.map((r) => [String(r.address), String(r.label)]));
 }
 
 // ---- Payees -----------------------------------------------------------------
 
-export function listPayees(includeArchived = false): Payee[] {
-  return read()
-    .payees.filter((p) => includeArchived || !p.archived)
-    .sort((a, b) => a.label.localeCompare(b.label));
+export async function listPayees(includeArchived = false): Promise<Payee[]> {
+  const c = await db();
+  const rs = await c.execute(
+    includeArchived
+      ? "SELECT * FROM payees ORDER BY label COLLATE NOCASE ASC"
+      : "SELECT * FROM payees WHERE archived = 0 ORDER BY label COLLATE NOCASE ASC",
+  );
+  return rs.rows.map(toPayee);
 }
 
-export function getPayee(id: string): Payee | undefined {
-  return read().payees.find((p) => p.id === id);
+export async function getPayee(id: string): Promise<Payee | undefined> {
+  const c = await db();
+  const rs = await c.execute({ sql: "SELECT * FROM payees WHERE id = ?", args: [id] });
+  return rs.rows[0] ? toPayee(rs.rows[0]) : undefined;
 }
 
-export function addPayee(input: {
+export async function addPayee(input: {
   label: string;
   address: string;
   notes?: string;
   by: string;
-}): Payee {
-  const state = read();
+}): Promise<Payee> {
   const address = input.address.trim();
   const label = input.label.trim();
   if (!address) throw new Error("address required");
   if (!label) throw new Error("label required");
-  if (state.payees.some((p) => p.address === address && !p.archived)) {
-    throw new Error("A payee with that address already exists");
-  }
+  const c = await db();
+  const dup = await c.execute({ sql: "SELECT 1 FROM payees WHERE address = ? AND archived = 0", args: [address] });
+  if (dup.rows.length) throw new Error("A payee with that address already exists");
   const payee: Payee = {
     id: randomUUID(),
     label,
@@ -343,23 +524,29 @@ export function addPayee(input: {
     added_by: input.by,
     added_at: Date.now(),
   };
-  state.payees.push(payee);
-  write(state);
+  await c.execute({
+    sql: "INSERT INTO payees (id, label, address, notes, added_by, added_at, archived) VALUES (?, ?, ?, ?, ?, ?, 0)",
+    args: [payee.id, payee.label, payee.address, payee.notes ?? null, payee.added_by, payee.added_at],
+  });
   return payee;
 }
 
-export function updatePayee(
+export async function updatePayee(
   id: string,
   patch: Partial<Pick<Payee, "label" | "address" | "notes" | "archived">>,
-): Payee {
-  const state = read();
-  const p = state.payees.find((x) => x.id === id);
-  if (!p) throw new Error(`No such payee: ${id}`);
+): Promise<Payee> {
+  const c = await db();
+  const cur = await c.execute({ sql: "SELECT * FROM payees WHERE id = ?", args: [id] });
+  if (!cur.rows[0]) throw new Error(`No such payee: ${id}`);
+  const p = toPayee(cur.rows[0]);
   if (patch.label !== undefined) p.label = patch.label.trim() || p.label;
   if (patch.address !== undefined) p.address = patch.address.trim() || p.address;
   if (patch.notes !== undefined) p.notes = patch.notes.trim() || undefined;
   if (patch.archived !== undefined) p.archived = patch.archived;
-  write(state);
+  await c.execute({
+    sql: "UPDATE payees SET label = ?, address = ?, notes = ?, archived = ? WHERE id = ?",
+    args: [p.label, p.address, p.notes ?? null, p.archived ? 1 : 0, id],
+  });
   return p;
 }
 
@@ -369,27 +556,35 @@ export interface RunWithItems extends PayoutRun {
   items: PayoutLineItem[];
 }
 
-export function listRuns(): RunWithItems[] {
-  const state = read();
-  return [...state.payout_runs]
-    .sort((a, b) => b.created_at - a.created_at)
-    .map((r) => ({ ...r, items: state.payout_items.filter((i) => i.run_id === r.id) }));
+export async function listRuns(): Promise<RunWithItems[]> {
+  const c = await db();
+  const [runs, items] = await Promise.all([
+    c.execute("SELECT * FROM payout_runs ORDER BY created_at DESC"),
+    c.execute("SELECT * FROM payout_items"),
+  ]);
+  const byRun = new Map<string, PayoutLineItem[]>();
+  for (const r of items.rows) {
+    const item = toItem(r);
+    (byRun.get(item.run_id) ?? byRun.set(item.run_id, []).get(item.run_id)!).push(item);
+  }
+  return runs.rows.map((r) => ({ ...toRun(r), items: byRun.get(String(r.id)) ?? [] }));
 }
 
-export function getRun(id: string): RunWithItems | undefined {
-  const state = read();
-  const run = state.payout_runs.find((r) => r.id === id);
-  if (!run) return undefined;
-  return { ...run, items: state.payout_items.filter((i) => i.run_id === id) };
+export async function getRun(id: string): Promise<RunWithItems | undefined> {
+  const c = await db();
+  const run = await c.execute({ sql: "SELECT * FROM payout_runs WHERE id = ?", args: [id] });
+  if (!run.rows[0]) return undefined;
+  const items = await c.execute({ sql: "SELECT * FROM payout_items WHERE run_id = ?", args: [id] });
+  return { ...toRun(run.rows[0]), items: items.rows.map(toItem) };
 }
 
-export function createRun(input: {
+export async function createRun(input: {
   title: string;
   sourceUfvkId?: string;
   note?: string;
   by: string;
-}): PayoutRun {
-  const state = read();
+}): Promise<PayoutRun> {
+  const c = await db();
   const run: PayoutRun = {
     id: randomUUID(),
     title: input.title.trim() || "Untitled run",
@@ -399,39 +594,53 @@ export function createRun(input: {
     status: "draft",
     note: input.note?.trim() || undefined,
   };
-  state.payout_runs.push(run);
-  write(state);
+  await c.execute({
+    sql: "INSERT INTO payout_runs (id, title, source_ufvk_id, created_by, created_at, status, note) VALUES (?, ?, ?, ?, ?, 'draft', ?)",
+    args: [run.id, run.title, run.source_ufvk_id ?? null, run.created_by, run.created_at, run.note ?? null],
+  });
   return run;
 }
 
-export function updateRun(
+export async function updateRun(
   id: string,
   patch: Partial<Pick<PayoutRun, "title" | "source_ufvk_id" | "note" | "status" | "sent_at">>,
-): PayoutRun {
-  const state = read();
-  const r = state.payout_runs.find((x) => x.id === id);
-  if (!r) throw new Error(`No such run: ${id}`);
-  Object.assign(r, patch);
-  write(state);
+): Promise<PayoutRun> {
+  const c = await db();
+  const cur = await c.execute({ sql: "SELECT * FROM payout_runs WHERE id = ?", args: [id] });
+  if (!cur.rows[0]) throw new Error(`No such run: ${id}`);
+  const r = toRun(cur.rows[0]);
+  if (patch.title !== undefined) r.title = patch.title;
+  if (patch.source_ufvk_id !== undefined) r.source_ufvk_id = patch.source_ufvk_id;
+  if (patch.note !== undefined) r.note = patch.note;
+  if (patch.status !== undefined) r.status = patch.status;
+  if (patch.sent_at !== undefined) r.sent_at = patch.sent_at;
+  await c.execute({
+    sql: "UPDATE payout_runs SET title = ?, source_ufvk_id = ?, note = ?, status = ?, sent_at = ? WHERE id = ?",
+    args: [r.title, r.source_ufvk_id ?? null, r.note ?? null, r.status, r.sent_at ?? null, id],
+  });
   return r;
 }
 
-export function setRunStatus(id: string, status: PayoutRunStatus): PayoutRun {
+export async function setRunStatus(id: string, status: PayoutRunStatus): Promise<PayoutRun> {
   const patch: Partial<PayoutRun> = { status };
   if (status === "sent") patch.sent_at = Date.now();
   return updateRun(id, patch);
 }
 
-export function removeRun(id: string): void {
-  const state = read();
-  state.payout_runs = state.payout_runs.filter((r) => r.id !== id);
-  state.payout_items = state.payout_items.filter((i) => i.run_id !== id);
-  write(state);
+export async function removeRun(id: string): Promise<void> {
+  const c = await db();
+  await c.batch(
+    [
+      { sql: "DELETE FROM payout_items WHERE run_id = ?", args: [id] },
+      { sql: "DELETE FROM payout_runs WHERE id = ?", args: [id] },
+    ],
+    "write",
+  );
 }
 
 // ---- Line items -------------------------------------------------------------
 
-export function addLineItem(
+export async function addLineItem(
   runId: string,
   input: {
     payeeId?: string;
@@ -441,11 +650,10 @@ export function addLineItem(
     memo?: string;
     workStatus?: WorkStatus;
   },
-): PayoutLineItem {
-  const state = read();
-  if (!state.payout_runs.some((r) => r.id === runId)) {
-    throw new Error(`No such run: ${runId}`);
-  }
+): Promise<PayoutLineItem> {
+  const c = await db();
+  const run = await c.execute({ sql: "SELECT 1 FROM payout_runs WHERE id = ?", args: [runId] });
+  if (!run.rows.length) throw new Error(`No such run: ${runId}`);
   const item: PayoutLineItem = {
     id: randomUUID(),
     run_id: runId,
@@ -459,18 +667,21 @@ export function addLineItem(
   };
   if (!item.address) throw new Error("address required");
   if (!(item.amount_zec > 0)) throw new Error("amount must be positive");
-  state.payout_items.push(item);
-  write(state);
+  await c.execute({
+    sql: "INSERT INTO payout_items (id, run_id, payee_id, label, address, amount_zec, memo, work_status, pay_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unpaid')",
+    args: [item.id, item.run_id, item.payee_id ?? null, item.label, item.address, item.amount_zec, item.memo ?? null, item.work_status],
+  });
   return item;
 }
 
-export function updateLineItem(
+export async function updateLineItem(
   itemId: string,
   patch: Partial<Pick<PayoutLineItem, "label" | "address" | "amount_zec" | "memo" | "work_status">>,
-): PayoutLineItem {
-  const state = read();
-  const item = state.payout_items.find((i) => i.id === itemId);
-  if (!item) throw new Error(`No such line item: ${itemId}`);
+): Promise<PayoutLineItem> {
+  const c = await db();
+  const cur = await c.execute({ sql: "SELECT * FROM payout_items WHERE id = ?", args: [itemId] });
+  if (!cur.rows[0]) throw new Error(`No such line item: ${itemId}`);
+  const item = toItem(cur.rows[0]);
   if (patch.label !== undefined) item.label = patch.label.trim() || item.label;
   if (patch.address !== undefined) item.address = patch.address.trim() || item.address;
   if (patch.amount_zec !== undefined) {
@@ -479,75 +690,94 @@ export function updateLineItem(
   }
   if (patch.memo !== undefined) item.memo = patch.memo.trim() || undefined;
   if (patch.work_status !== undefined) item.work_status = patch.work_status;
-  write(state);
+  await c.execute({
+    sql: "UPDATE payout_items SET label = ?, address = ?, amount_zec = ?, memo = ?, work_status = ? WHERE id = ?",
+    args: [item.label, item.address, item.amount_zec, item.memo ?? null, item.work_status, itemId],
+  });
   return item;
 }
 
-export function removeLineItem(itemId: string): void {
-  const state = read();
-  state.payout_items = state.payout_items.filter((i) => i.id !== itemId);
-  write(state);
+export async function removeLineItem(itemId: string): Promise<void> {
+  const c = await db();
+  await c.execute({ sql: "DELETE FROM payout_items WHERE id = ?", args: [itemId] });
 }
 
-// Manual settlement: treasurer pastes the txid after paying in their wallet.
-export function markLineItemPaid(
+// Manual settlement: treasurer marks a line paid for payments made elsewhere.
+export async function markLineItemPaid(
   itemId: string,
   input: { txid?: string; blockHeight?: number; reconciled?: boolean },
-): PayoutLineItem {
-  const state = read();
-  const item = state.payout_items.find((i) => i.id === itemId);
-  if (!item) throw new Error(`No such line item: ${itemId}`);
+): Promise<PayoutLineItem> {
+  const c = await db();
+  const cur = await c.execute({ sql: "SELECT * FROM payout_items WHERE id = ?", args: [itemId] });
+  if (!cur.rows[0]) throw new Error(`No such line item: ${itemId}`);
+  const item = toItem(cur.rows[0]);
   item.pay_status = "paid";
   item.txid = input.txid?.trim() || item.txid;
   item.paid_at = Date.now();
   if (input.blockHeight !== undefined) item.paid_block = input.blockHeight;
   item.reconciled = input.reconciled ?? false;
-  write(state);
+  await c.execute({
+    sql: "UPDATE payout_items SET pay_status = 'paid', txid = ?, paid_at = ?, paid_block = ?, reconciled = ? WHERE id = ?",
+    args: [item.txid ?? null, item.paid_at, item.paid_block ?? null, item.reconciled ? 1 : 0, itemId],
+  });
   return item;
 }
 
-export function setLineItemPayStatus(itemId: string, status: PayStatus): PayoutLineItem {
-  const state = read();
-  const item = state.payout_items.find((i) => i.id === itemId);
-  if (!item) throw new Error(`No such line item: ${itemId}`);
+export async function setLineItemPayStatus(itemId: string, status: PayStatus): Promise<PayoutLineItem> {
+  const c = await db();
+  const cur = await c.execute({ sql: "SELECT * FROM payout_items WHERE id = ?", args: [itemId] });
+  if (!cur.rows[0]) throw new Error(`No such line item: ${itemId}`);
+  const item = toItem(cur.rows[0]);
   item.pay_status = status;
   if (status === "unpaid") {
     item.txid = undefined;
     item.paid_at = undefined;
     item.paid_block = undefined;
     item.reconciled = undefined;
+    await c.execute({
+      sql: "UPDATE payout_items SET pay_status = 'unpaid', txid = NULL, paid_at = NULL, paid_block = NULL, reconciled = NULL WHERE id = ?",
+      args: [itemId],
+    });
+  } else {
+    await c.execute({ sql: "UPDATE payout_items SET pay_status = ? WHERE id = ?", args: [status, itemId] });
   }
-  write(state);
   return item;
 }
 
 // Match unpaid completed items against the treasury's synced OUT txs by
-// recipient address + amount. Each synced tx settles at most one line.
-export function reconcileRun(runId: string): { matched: number; items: PayoutLineItem[] } {
-  const state = read();
-  const run = state.payout_runs.find((r) => r.id === runId);
-  if (!run) throw new Error(`No such run: ${runId}`);
+// recipient address + amount (compared in zatoshi). Each synced tx settles at
+// most one line; a memo on the line disambiguates repeat payments to one address.
+export async function reconcileRun(runId: string): Promise<{ matched: number; items: PayoutLineItem[] }> {
+  const c = await db();
+  const runRs = await c.execute({ sql: "SELECT * FROM payout_runs WHERE id = ?", args: [runId] });
+  if (!runRs.rows[0]) throw new Error(`No such run: ${runId}`);
+  const run = toRun(runRs.rows[0]);
 
-  const outTxs = state.transactions.filter(
-    (t) =>
-      t.direction === "out" &&
-      (!run.source_ufvk_id || t.ufvk_id === run.source_ufvk_id),
-  );
+  const outRs = run.source_ufvk_id
+    ? await c.execute({ sql: "SELECT * FROM transactions WHERE direction = 'out' AND ufvk_id = ?", args: [run.source_ufvk_id] })
+    : await c.execute("SELECT * FROM transactions WHERE direction = 'out'");
+  const outTxs = outRs.rows.map(toTx);
+
+  const itemsRs = await c.execute({ sql: "SELECT * FROM payout_items WHERE run_id = ?", args: [runId] });
+  const items = itemsRs.rows.map(toItem);
+
   const usedTxKeys = new Set(
-    state.payout_items.filter((i) => i.txid).map((i) => `${i.txid}:${i.address}`),
+    items.filter((i) => i.txid).map((i) => `${i.txid}:${i.address}:${i.memo ?? ""}`),
   );
 
+  const statements: { sql: string; args: (string | number | null)[] }[] = [];
   let matched = 0;
   const touched: PayoutLineItem[] = [];
-  for (const item of state.payout_items) {
-    if (item.run_id !== runId) continue;
+
+  for (const item of items) {
     if (item.pay_status === "paid") continue;
     if (item.work_status !== "completed") continue;
-
+    const itemZat = Math.round(item.amount_zec * 1e8);
     const hit = outTxs.find((t) => {
       if (!t.counterparty || t.counterparty !== item.address) return false;
-      if (Math.abs(Math.abs(t.amount_zec) - item.amount_zec) > 1e-8) return false;
-      return !usedTxKeys.has(`${t.txid}:${item.address}`);
+      if (Math.round(Math.abs(t.amount_zec) * 1e8) !== itemZat) return false;
+      if (item.memo && t.memo && !t.memo.includes(item.memo)) return false;
+      return !usedTxKeys.has(`${t.txid}:${item.address}:${t.memo ?? ""}`);
     });
     if (!hit) continue;
 
@@ -556,33 +786,57 @@ export function reconcileRun(runId: string): { matched: number; items: PayoutLin
     item.paid_at = Date.now();
     item.paid_block = hit.block_height;
     item.reconciled = true;
-    usedTxKeys.add(`${hit.txid}:${item.address}`);
+    usedTxKeys.add(`${hit.txid}:${item.address}:${hit.memo ?? ""}`);
     matched++;
     touched.push(item);
 
-    // Close the accounting loop: an unclassified matched payout is a
-    // contractor expense, and the recipient gets the payee's friendly label.
-    const tx = state.transactions.find((t) => t.id === hit.id);
-    if (tx && !tx.tag) {
-      tx.tag = "contractor";
-      tx.tagged_by = "payout-reconcile";
-      tx.tagged_at = Date.now();
-    }
-    if (!state.counterparties.some((c) => c.address === item.address)) {
-      state.counterparties.push({
-        address: item.address,
-        label: item.label,
-        added_by: "payout-reconcile",
-        added_at: Date.now(),
+    statements.push({
+      sql: "UPDATE payout_items SET pay_status = 'paid', txid = ?, paid_at = ?, paid_block = ?, reconciled = 1 WHERE id = ?",
+      args: [item.txid ?? null, item.paid_at, item.paid_block ?? null, item.id],
+    });
+    // Close the accounting loop: an unclassified matched payout is a contractor
+    // expense, and the recipient gets the payee's friendly label.
+    if (!hit.tag) {
+      statements.push({
+        sql: "UPDATE transactions SET tag = 'contractor', tagged_by = 'payout-reconcile', tagged_at = ? WHERE id = ? AND tag IS NULL",
+        args: [Date.now(), hit.id],
       });
     }
+    statements.push({
+      sql: "INSERT INTO counterparties (address, label, added_by, added_at) VALUES (?, ?, 'payout-reconcile', ?) ON CONFLICT(address) DO NOTHING",
+      args: [item.address, item.label, Date.now()],
+    });
   }
 
   if (matched > 0) {
-    if (run.status === "sent" && state.payout_items.filter((i) => i.run_id === runId && i.work_status === "completed").every((i) => i.pay_status === "paid")) {
-      run.status = "reconciled";
+    const completed = items.filter((i) => i.work_status === "completed");
+    const allPaid = completed.every((i) => i.pay_status === "paid");
+    if (run.status === "sent" && allPaid) {
+      statements.push({ sql: "UPDATE payout_runs SET status = 'reconciled' WHERE id = ?", args: [runId] });
     }
-    write(state);
+    await c.batch(statements, "write");
   }
   return { matched, items: touched };
+}
+
+// ---- Fiat price cache (ZEC/USD by UTC date, YYYY-MM-DD) ----------------------
+
+export async function getFiatPrices(dates: string[]): Promise<Map<string, number>> {
+  if (dates.length === 0) return new Map();
+  const c = await db();
+  const placeholders = dates.map(() => "?").join(",");
+  const rs = await c.execute({ sql: `SELECT date, usd FROM fiat_prices WHERE date IN (${placeholders})`, args: dates });
+  return new Map(rs.rows.map((r) => [String(r.date), Number(r.usd)]));
+}
+
+export async function saveFiatPrices(entries: { date: string; usd: number }[]): Promise<void> {
+  if (entries.length === 0) return;
+  const c = await db();
+  await c.batch(
+    entries.map((e) => ({
+      sql: "INSERT OR REPLACE INTO fiat_prices (date, usd, fetched_at) VALUES (?, ?, ?)",
+      args: [e.date, e.usd, Date.now()],
+    })),
+    "write",
+  );
 }

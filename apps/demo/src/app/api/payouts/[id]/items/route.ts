@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
 
-  if (!getRun(params.id)) return NextResponse.json({ error: "run not found" }, { status: 404 });
+  if (!(await getRun(params.id))) return NextResponse.json({ error: "run not found" }, { status: 404 });
 
   let body: {
     payeeId?: unknown;
@@ -34,10 +34,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const created: PayoutLineItem[] = [];
     for (const pid of body.payeeIds) {
       if (typeof pid !== "string") continue;
-      const payee = getPayee(pid);
+      const payee = await getPayee(pid);
       if (!payee) continue;
       created.push(
-        addLineItem(params.id, {
+        await addLineItem(params.id, {
           payeeId: payee.id,
           label: payee.label,
           address: payee.address,
@@ -63,7 +63,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   let payeeId: string | undefined;
 
   if (typeof body.payeeId === "string") {
-    const payee = getPayee(body.payeeId);
+    const payee = await getPayee(body.payeeId);
     if (!payee) return NextResponse.json({ error: "payee not found" }, { status: 404 });
     label = payee.label;
     address = payee.address;
@@ -78,7 +78,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   try {
-    const item = addLineItem(params.id, { payeeId, label, address, amountZec, memo, workStatus });
+    const item = await addLineItem(params.id, { payeeId, label, address, amountZec, memo, workStatus });
     return NextResponse.json({ item });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });

@@ -10,7 +10,7 @@ const STATUSES: PayoutRunStatus[] = ["draft", "sent", "reconciled", "void"];
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
-  const run = getRun(params.id);
+  const run = await getRun(params.id);
   if (!run) return NextResponse.json({ error: "not found" }, { status: 404 });
   const preflight = await runPreflight(run);
   return NextResponse.json({ run, preflight });
@@ -45,7 +45,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   try {
-    return NextResponse.json({ run: updateRun(params.id, patch) });
+    return NextResponse.json({ run: await updateRun(params.id, patch) });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 404 });
   }
@@ -54,6 +54,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
-  removeRun(params.id);
+  await removeRun(params.id);
   return NextResponse.json({ ok: true });
 }

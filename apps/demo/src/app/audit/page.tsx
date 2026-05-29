@@ -15,8 +15,8 @@ export default async function AuditPage() {
   const user = await currentUser();
   if (!user) redirect("/");
 
-  const txs = listTransactions();
-  const labels = counterpartyLabelMap();
+  const txs = await listTransactions();
+  const labels = await counterpartyLabelMap();
 
   const entries = txs
     .filter((t) => t.tagged_by && t.tagged_at)

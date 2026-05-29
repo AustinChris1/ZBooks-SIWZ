@@ -7,10 +7,11 @@ import { useRouter } from "next/navigation";
 
 type Flow = "memo" | "siwz" | "snap";
 
+// Three ways to sign in. example-comments exists to show each one plainly.
 const FLOWS: Record<Flow, { title: string; subtitle: string }> = {
-  memo: { title: "Send a payment", subtitle: "Every shielded wallet supports this." },
-  siwz: { title: "Paste a signed message", subtitle: "Wallets with signmessage (zcash-cli, YWallet)." },
-  snap: { title: "MetaMask Snap", subtitle: "ChainSafe allowlist-restricted in local dev." },
+  memo: { title: "Memo challenge", subtitle: "Sign in by sending a tiny shielded payment. Works with every Zcash wallet." },
+  siwz: { title: "Signed message", subtitle: "Sign in by pasting a wallet signature (zcash-cli, YWallet)." },
+  snap: { title: "MetaMask Snap", subtitle: "Sign in with the ChainSafe Zcash Snap. One click." },
 };
 
 export function SignInClient() {
@@ -20,18 +21,18 @@ export function SignInClient() {
   if (status === "loading") return <div className="opacity-50">Loading…</div>;
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-1 flex-wrap text-sm">
+      <div className="tabs">
         {(Object.keys(FLOWS) as Flow[]).map((k) => (
           <button
             key={k}
             onClick={() => setFlow(k)}
-            className={`rounded-md px-3 py-1.5 border ${flow === k ? "border-current font-semibold" : "border-transparent opacity-70"}`}
+            className={`tab${flow === k ? " active" : ""}`}
           >
             {FLOWS[k].title}
           </button>
         ))}
       </div>
-      <div className="text-xs opacity-60">{FLOWS[flow].subtitle}</div>
+      <div style={{ fontSize: "0.8rem", opacity: 0.6 }}>{FLOWS[flow].subtitle}</div>
       {flow === "memo" && <MemoFlow />}
       {flow === "siwz" && <ClassicFlow />}
       {flow === "snap" && <SnapFlow onUseDifferentWallet={() => setFlow("siwz")} />}
@@ -178,8 +179,8 @@ function MemoFlow() {
     return (
       <div className="card">
         <p className="opacity-80 text-sm">
-          Send a tiny ZEC payment from any shielded wallet. The amount or
-          memo is unique to this sign-in attempt.
+          Sign in by sending a tiny shielded payment from any Zcash wallet. The
+          unique amount or memo proves you control the wallet. No password, no custody.
         </p>
         <button className="btn" onClick={begin} disabled={issuing}>
           {issuing ? "Preparing…" : "Sign in with Zcash"}
@@ -209,7 +210,7 @@ function MemoFlow() {
           DEMO mode: the poll endpoint auto-matches without an actual on-chain tx.
         </div>
       )}
-      {signedIn ? <p className="text-emerald-600 text-sm">Signing in…</p> : <p className="opacity-60 text-sm">Polling… (~75s after wallet send)</p>}
+      {signedIn ? <p className="text-emerald-600 text-sm">Signing in…</p> : <p className="opacity-60 text-sm">Polling… (usually 5 to 15s after wallet send)</p>}
       {error && <p className="text-red-600 text-sm">{error}</p>}
     </div>
   );

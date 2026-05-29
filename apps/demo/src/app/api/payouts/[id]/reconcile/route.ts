@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
 
-  const run = getRun(params.id);
+  const run = await getRun(params.id);
   if (!run) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const wantSync = new URL(req.url).searchParams.get("sync") === "1";
@@ -20,6 +20,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     await syncUfvk(run.source_ufvk_id);
   }
 
-  const { matched, items } = reconcileRun(params.id);
+  const { matched, items } = await reconcileRun(params.id);
   return NextResponse.json({ matched, items });
 }

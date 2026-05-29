@@ -76,7 +76,7 @@ export async function runPreflight(run: RunWithItems): Promise<RunPreflight> {
 }
 
 export async function getTreasuryBalance(ufvkId: string): Promise<UfvkBalance | null> {
-  const key = getKey(ufvkId);
+  const key = await getKey(ufvkId);
   if (!key) return null;
   const explorer = getShieldedExplorer();
   if (!explorer?.getBalanceForUfvk) return null;

@@ -12,7 +12,26 @@ export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
   const [busy, setBusy] = useState(false);
   const router = useRouter();
   const { confirm } = useConfirm();
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(k.label);
   const isSyncing = k.sync_status === "syncing" || busy;
+
+  const saveLabel = () => {
+    const next = label.trim();
+    setEditing(false);
+    if (!next || next === k.label) {
+      setLabel(k.label);
+      return;
+    }
+    startTransition(async () => {
+      await fetch(`/api/keys/${k.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ label: next }),
+      });
+      router.refresh();
+    });
+  };
   const progress = computeProgress(k);
 
   // While a sync runs server-side, poll so the row updates without a manual refresh.
@@ -60,7 +79,36 @@ export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold tracking-tight">{k.label}</span>
+            {editing && canEdit ? (
+              <input
+                autoFocus
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                onBlur={saveLabel}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveLabel();
+                  if (e.key === "Escape") {
+                    setLabel(k.label);
+                    setEditing(false);
+                  }
+                }}
+                maxLength={80}
+                className="font-semibold rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-1.5 py-0.5 text-sm w-48"
+              />
+            ) : (
+              <span className="font-semibold tracking-tight inline-flex items-center gap-1.5">
+                {k.label}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="text-[10px] font-normal text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  >
+                    rename
+                  </button>
+                )}
+              </span>
+            )}
             {k.primary && (
               <span className="text-[10px] uppercase tracking-wider bg-zcash-yellow/25 text-zcash-dark dark:text-zcash-yellow px-1.5 py-0.5 rounded">
                 Primary

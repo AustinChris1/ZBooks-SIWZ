@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { counterpartyLabelMap, listTransactions } from "@/lib/db";
 import { currentUser } from "@/lib/session";
+import { zecUsdForTimestamps } from "@/lib/fiat";
 import { ReportsView } from "./ReportsView";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +10,10 @@ export default async function ReportsPage() {
   const user = await currentUser();
   if (!user) redirect("/");
 
-  const txs = listTransactions();
-  const counterpartyLabels = Object.fromEntries(counterpartyLabelMap().entries());
+  const txs = await listTransactions();
+  const counterpartyLabels = Object.fromEntries((await counterpartyLabelMap()).entries());
+  // ZEC/USD per transaction date for fiat valuation (cached in the store).
+  const priceByDate = Object.fromEntries((await zecUsdForTimestamps(txs.map((t) => t.timestamp))).entries());
 
   if (txs.length === 0) {
     return (
@@ -23,5 +26,5 @@ export default async function ReportsPage() {
     );
   }
 
-  return <ReportsView allTxs={txs} counterpartyLabels={counterpartyLabels} />;
+  return <ReportsView allTxs={txs} counterpartyLabels={counterpartyLabels} priceByDate={priceByDate} />;
 }

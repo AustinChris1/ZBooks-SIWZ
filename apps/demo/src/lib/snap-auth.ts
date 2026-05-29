@@ -48,17 +48,19 @@ export function snapIdentityFor(fingerprint: string, ufvk?: string): string {
 }
 
 // Ensure team membership + auto-import the UFVK if it's real and new.
-export function onSnapAuthSuccess(
+export async function onSnapAuthSuccess(
   creds: SnapCredentials,
-  label = "MetaMask Zcash Snap",
-): { identity: string } {
+  label?: string,
+): Promise<{ identity: string }> {
   const identity = snapIdentityFor(creds.fingerprint, creds.ufvk);
-  ensureMember(identity);
+  await ensureMember(identity);
   const ufvk = creds.ufvk?.trim() ?? "";
   if (ufvk && !ufvk.startsWith("anon:")) {
-    const already = listKeys().some((k) => k.ufvk.trim() === ufvk);
+    const already = (await listKeys()).some((k) => k.ufvk.trim() === ufvk);
     if (!already) {
-      addKey({ owner: identity, label, ufvk });
+      // Unique-ish default so multiple snap imports do not collide on one name.
+      const short = ufvk.length > 22 ? `${ufvk.slice(0, 12)}…${ufvk.slice(-6)}` : ufvk;
+      await addKey({ owner: identity, label: label ?? `MetaMask wallet ${short}`, ufvk });
     }
   }
   return { identity };

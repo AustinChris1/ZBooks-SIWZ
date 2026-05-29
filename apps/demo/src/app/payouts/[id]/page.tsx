@@ -11,20 +11,20 @@ export default async function PayoutRunPage({ params }: { params: { id: string }
   if (!user) redirect("/");
   if (!canSeePayouts(user.role)) redirect("/transactions");
 
-  if (!getRun(params.id)) notFound();
+  if (!(await getRun(params.id))) notFound();
   // Auto-match against already-synced treasury txs so payments show as paid
   // without any manual step. Idempotent; no network (use the button to sync).
   try {
-    reconcileRun(params.id);
+    await reconcileRun(params.id);
   } catch {
     // best-effort
   }
-  const run = getRun(params.id);
+  const run = await getRun(params.id);
   if (!run) notFound();
 
   const preflight = await runPreflight(run);
-  const payees = listPayees().map((p) => ({ id: p.id, label: p.label, address: p.address }));
-  const keys = listKeys().map((k) => ({ id: k.id, label: k.label, primary: k.primary }));
+  const payees = (await listPayees()).map((p) => ({ id: p.id, label: p.label, address: p.address }));
+  const keys = (await listKeys()).map((k) => ({ id: k.id, label: k.label, primary: k.primary }));
 
   return (
     <PayoutRunDetail

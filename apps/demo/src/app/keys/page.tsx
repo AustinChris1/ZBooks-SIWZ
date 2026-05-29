@@ -10,7 +10,7 @@ export default async function KeysPage() {
   const user = await currentUser();
   if (!user) redirect("/");
 
-  const keys = listKeys();
+  const keys = await listKeys();
   const canEdit = canManageKeys(user.role);
 
   const isEmpty = keys.length === 0;

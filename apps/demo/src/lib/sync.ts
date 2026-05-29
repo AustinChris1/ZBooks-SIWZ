@@ -14,7 +14,7 @@ export interface SyncOutcome {
 }
 
 export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
-  const key = getKey(ufvkId);
+  const key = await getKey(ufvkId);
   if (!key) return { ok: false, error: "UFVK not found" };
 
   if (inFlight.has(ufvkId)) {
@@ -27,17 +27,17 @@ export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
     inFlight.delete(ufvkId);
     const msg =
       "No shielded backend configured. Set LIGHTWALLET_RPC_URL + LIGHTWALLET_RPC_TOKEN, or ZCASH_RPC_URL, or SIWZ_DEMO=1.";
-    updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
+    await updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
     return { ok: false, error: msg };
   }
   if (!explorer.getTransactionsForUfvk) {
     inFlight.delete(ufvkId);
     const msg = "The configured shielded backend doesn't support UFVK syncing.";
-    updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
+    await updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
     return { ok: false, error: msg };
   }
 
-  updateKeySyncStatus(ufvkId, { sync_status: "syncing", last_sync_error: undefined });
+  await updateKeySyncStatus(ufvkId, { sync_status: "syncing", last_sync_error: undefined });
 
   try {
     const result = await explorer.getTransactionsForUfvk(key.ufvk, {
@@ -57,8 +57,8 @@ export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
       };
     });
 
-    const { inserted, updated } = upsertTransactions(ufvkId, normalised);
-    updateKeySyncStatus(ufvkId, {
+    const { inserted, updated } = await upsertTransactions(ufvkId, normalised);
+    await updateKeySyncStatus(ufvkId, {
       sync_status: "ok",
       last_synced_at: Date.now(),
       last_synced_block: result.syncedToBlock ?? undefined,
@@ -70,7 +70,7 @@ export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
     return { ok: true, inserted, updated, syncedToBlock: result.syncedToBlock };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
+    await updateKeySyncStatus(ufvkId, { sync_status: "error", last_sync_error: msg });
     return { ok: false, error: msg };
   } finally {
     inFlight.delete(ufvkId);

@@ -41,3 +41,21 @@ html, body {
 @media (prefers-color-scheme: dark) {
   .card { border-color: rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.03); }
 }
+
+.tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+.tab {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.tab:hover { border-color: rgba(0, 0, 0, 0.35); }
+.tab.active { background: #f4b728; color: #1a1a1a; border-color: #f4b728; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  .tab { border-color: rgba(255, 255, 255, 0.18); }
+  .tab:hover { border-color: rgba(255, 255, 255, 0.45); }
+  .tab.active { border-color: #f4b728; }
+}

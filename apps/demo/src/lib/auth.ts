@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { SiwzProvider } from "@siwz/next-auth";
@@ -14,15 +14,19 @@ import { inspectUfvk } from "./ufvk";
 const SECRET = process.env.NEXTAUTH_SECRET;
 if (!SECRET) {
   // Warn rather than throw so Next can build its import graph before env-checks run.
-  console.warn("[demo] NEXTAUTH_SECRET is not set — auth will fail.");
+  console.warn("[demo] NEXTAUTH_SECRET is not set. Auth will fail until it is configured.");
 }
+// Never fall back to a known constant; that would make the HMAC nonce and
+// envelope tokens forgeable. A random per-process secret fails closed (tokens
+// simply do not validate) rather than fully open.
+const EFFECTIVE_SECRET = SECRET ?? randomBytes(32).toString("hex");
 const SIWZ_DOMAIN = process.env.SIWZ_DOMAIN ?? "localhost:3000";
 
 export const SIWZ_NETWORK: Network = (process.env.SIWZ_NETWORK as Network) ?? "mainnet";
 
 const siwzConfig = SiwzProvider({
   expectedDomain: SIWZ_DOMAIN,
-  secret: SECRET ?? "insecure-dev-fallback-secret-do-not-use-in-prod",
+  secret: EFFECTIVE_SECRET,
 });
 
 const memoProvider = CredentialsProvider({
@@ -50,7 +54,7 @@ const memoProvider = CredentialsProvider({
       // Use c.identity directly — don't re-derive through snapIdentityFor
       // (which would double-hash the anon prefix into snap:<hash-of-anon>).
       const identity = c.identity;
-      ensureMember(identity);
+      await ensureMember(identity);
 
       // Auto-import UFVK only when its hash matches the identity's anon
       // suffix (anti-spoof: a client can't attach someone else's UFVK).
@@ -60,11 +64,11 @@ const memoProvider = CredentialsProvider({
         if (`anon:${expectedSuffix}` === identity) {
           const inspection = inspectUfvk(ufvk);
           if (inspection.valid) {
-            const already = listKeys().some((k) => k.ufvk.trim() === ufvk);
+            const already = (await listKeys()).some((k) => k.ufvk.trim() === ufvk);
             if (!already) {
-              addKey({
+              await addKey({
                 owner: identity,
-                label: "SIWZ memo-challenge",
+                label: `Sign-in wallet ${shortUfvk(ufvk)}`,
                 ufvk,
                 birthday: ZCASH_BLOCKS.SAFE_RECENT_BIRTHDAY,
               });
@@ -92,6 +96,11 @@ function hashIdentity(s: string): string {
   return createHash("sha256").update(s).digest("hex").slice(0, 32);
 }
 
+// Short, unique-ish label so auto-imported keys do not all collide on one name.
+function shortUfvk(u: string): string {
+  return u.length > 22 ? `${u.slice(0, 12)}…${u.slice(-6)}` : u;
+}
+
 const snapProvider = CredentialsProvider({
   id: "snap",
   name: "Sign in with MetaMask (Zcash Snap)",
@@ -114,7 +123,7 @@ const snapProvider = CredentialsProvider({
         console.warn("[snap] envelope HMAC mismatch");
         return null;
       }
-      const { identity } = onSnapAuthSuccess({ fingerprint: c.fingerprint, ufvk: c.ufvk });
+      const { identity } = await onSnapAuthSuccess({ fingerprint: c.fingerprint, ufvk: c.ufvk });
       return {
         id: identity,
         name: identity,
@@ -137,7 +146,7 @@ export const authOptions: NextAuthOptions = {
   ],
   session: { strategy: "jwt" },
   pages: { signIn: "/" },
-  secret: SECRET,
+  secret: EFFECTIVE_SECRET,
   callbacks: {
     async jwt({ token, user }) {
       if (user) {

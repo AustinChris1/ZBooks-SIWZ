@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requireRole("admin", "treasurer", "viewer");
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
-  return NextResponse.json({ keys: listKeys() });
+  return NextResponse.json({ keys: await listKeys() });
 }
 
 export async function POST(req: Request) {
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   const birthday = Number.isFinite(birthdayRaw) && birthdayRaw >= 0
     ? Math.floor(birthdayRaw)
     : undefined;
-  const key = addKey({ owner: auth.address, label: label || "Untitled key", ufvk, birthday });
+  const key = await addKey({ owner: auth.address, label: label || "Untitled key", ufvk, birthday });
   // Kick off the first sync without blocking the response. Initial sync
   // for an active UFVK can take a couple of minutes; the UI polls /keys
   // to see when the row's sync_status flips from "syncing" to "ok".

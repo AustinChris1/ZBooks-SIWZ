@@ -9,8 +9,8 @@ export default async function CounterpartiesPage() {
   const user = await currentUser();
   if (!user) redirect("/");
 
-  const saved = listCounterparties();
-  const txs = listTransactions();
+  const saved = await listCounterparties();
+  const txs = await listTransactions();
 
   const stats = new Map<string, { count: number; totalIn: number; totalOut: number; latest: number }>();
   for (const t of txs) {

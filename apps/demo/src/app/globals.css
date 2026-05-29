@@ -64,3 +64,10 @@ html.dark .recharts-legend-item-text {
 html.dark .recharts-cartesian-grid line {
   stroke: rgba(255, 255, 255, 0.06);
 }
+
+/* Native select/option popups ignore Tailwind dark utilities; force them dark. */
+html.dark select,
+html.dark option {
+  background-color: #15151a;
+  color: var(--fg);
+}

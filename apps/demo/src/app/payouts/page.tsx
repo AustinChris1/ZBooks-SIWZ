@@ -19,9 +19,9 @@ export default async function PayoutsPage() {
   if (!user) redirect("/");
   if (!canSeePayouts(user.role)) redirect("/transactions");
 
-  const runs = listRuns();
-  const payees = listPayees();
-  const keys = listKeys().map((k) => ({ id: k.id, label: k.label, primary: k.primary }));
+  const runs = await listRuns();
+  const payees = await listPayees();
+  const keys = (await listKeys()).map((k) => ({ id: k.id, label: k.label, primary: k.primary }));
   const canEdit = canTag(user.role);
 
   return (

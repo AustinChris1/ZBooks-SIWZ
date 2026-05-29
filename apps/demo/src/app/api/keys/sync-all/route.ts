@@ -10,7 +10,7 @@ export async function POST() {
   const auth = await requireRole("admin", "treasurer", "viewer");
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
 
-  const keys = listKeys();
+  const keys = await listKeys();
   for (const k of keys) syncUfvkInBackground(k.id);
 
   return NextResponse.json({ ok: true, queued: keys.length });
