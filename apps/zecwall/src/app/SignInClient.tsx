@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 
 type Flow = "memo" | "siwz" | "snap";
 
-// Three ways to sign in. example-comments exists to show each one plainly.
+// Three ways to sign in. ZecWall exists to show each one plainly.
 const FLOWS: Record<Flow, { title: string; subtitle: string }> = {
   memo: { title: "Memo challenge", subtitle: "Sign in by sending a tiny shielded payment. Works with every Zcash wallet." },
   siwz: { title: "Signed message", subtitle: "Sign in by pasting a wallet signature (zcash-cli, YWallet)." },

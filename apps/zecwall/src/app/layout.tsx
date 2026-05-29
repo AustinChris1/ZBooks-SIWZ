@@ -3,7 +3,7 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Zcash-gated comments — SIWZ reference integration",
+  title: "ZecWall: a Zcash-gated comments wall built on Sign in with Zcash",
   description: "Minimal reference app demonstrating SIWZ as a reusable sign-in primitive.",
 };
 
@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <main className="mx-auto max-w-2xl px-4 py-8 flex flex-col gap-8">
             <header className="flex items-baseline justify-between">
-              <h1 className="text-xl font-semibold">Zcash-gated comments</h1>
+              <h1 className="text-xl font-semibold">ZecWall</h1>
               <span className="text-xs opacity-60">
                 SIWZ reference integration ·{" "}
                 <a className="underline" href="https://github.com" target="_blank" rel="noreferrer">

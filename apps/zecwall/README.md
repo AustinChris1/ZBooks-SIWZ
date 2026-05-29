@@ -1,4 +1,4 @@
-# SIWZ reference integration: Zcash-gated comments wall
+# ZecWall: a Zcash-gated comments wall (SIWZ reference integration)
 
 This is what dropping SIWZ into a new app looks like. ~150 lines of code,
 of which **3 files** are the actual SIWZ wiring:
@@ -17,9 +17,9 @@ ZBooks runs on `:3000`; this runs on `:3001`. Both consume the same `@siwz/*` wo
 
 ```bash
 pnpm install
-cp apps/example-comments/.env.example apps/example-comments/.env.local
+cp apps/zecwall/.env.example apps/zecwall/.env.local
 # generate a NEXTAUTH_SECRET, set SIWZ_SERVICE_ADDRESS to any t1… you own
-pnpm --filter @siwz/example-comments dev
+pnpm --filter @siwz/zecwall dev
 # open http://localhost:3001
 ```
 

@@ -12,6 +12,9 @@ export default function HomePage() {
           The accounting tool ZEC teams have been{" "}
           <span className="text-zcash-yellow">avoiding spreadsheets</span> to build.
         </h1>
+        <p className="text-xl font-medium text-neutral-800 dark:text-neutral-100">
+          Accounting &amp; payroll for shielded ZEC teams.
+        </p>
         <p className="text-lg text-neutral-600 dark:text-neutral-300 leading-relaxed">
           DAOs, grant recipients and contractor teams paid in Zcash keep
           pasting txids into Google Sheets every quarter. ZBooks does
@@ -54,8 +57,8 @@ export default function HomePage() {
           body="Admin sets policy, treasurer tags and pays, viewer reads. Onboarding a new finance contractor is one sign-in."
         />
         <Card
-          title="Self-hostable on a $3 VPS"
-          body="The shielded sync runs on a tiny zingo-cli lite wallet, not a 300 GB full node. Front-end deploys to Vercel."
+          title="Shielded by default"
+          body="Sign-in and balance sync ride encrypted Zcash memos, so amounts and counterparties stay off the public ledger."
         />
       </section>
     </div>

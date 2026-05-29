@@ -84,7 +84,7 @@ function extractNonce(token: string): string {
 }
 
 function success(identity: string, secret: string, txid: string) {
-  // Envelope shape matches what apps/example-comments/src/lib/auth.ts verifies.
+  // Envelope shape matches what apps/zecwall/src/lib/auth.ts verifies.
   const envelope = createHmac("sha256", secret).update(`memo::${identity}`).digest("hex");
   return NextResponse.json({ ok: true, identity, envelope, txid });
 }
