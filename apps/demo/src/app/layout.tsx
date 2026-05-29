@@ -4,6 +4,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getMember } from "@/lib/db";
+import { canSeePayouts } from "@/lib/session";
 import Link from "next/link";
 import { PageTransition } from "@/components/PageTransition";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -42,6 +44,8 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
   const address = (session?.user as { address?: string } | undefined)?.address;
+  const role = address ? getMember(address)?.role : undefined;
+  const showPayouts = role ? canSeePayouts(role) : false;
 
   return (
     <html
@@ -58,7 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body suppressHydrationWarning>
         <Providers>
           <div className="min-h-screen flex flex-col">
-            <Header signedInAs={address} />
+            <Header signedInAs={address} showPayouts={showPayouts} />
             <main className="mx-auto w-full max-w-5xl px-4 py-10 flex-1">
               <PageTransition>{children}</PageTransition>
             </main>
@@ -70,7 +74,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   );
 }
 
-function Header({ signedInAs }: { signedInAs?: string }) {
+function Header({ signedInAs, showPayouts }: { signedInAs?: string; showPayouts?: boolean }) {
   return (
     <header className="border-b border-neutral-200 dark:border-neutral-800/80 bg-white/60 dark:bg-neutral-950/40 backdrop-blur sticky top-0 z-10">
       <div className="mx-auto max-w-5xl px-4 py-3.5 flex items-center justify-between gap-6">
@@ -89,6 +93,7 @@ function Header({ signedInAs }: { signedInAs?: string }) {
               <>
                 <NavLink href="/keys">Keys</NavLink>
                 <NavLink href="/transactions">Transactions</NavLink>
+                {showPayouts && <NavLink href="/payouts">Payouts</NavLink>}
                 <NavLink href="/reports">Reports</NavLink>
                 <NavLink href="/counterparties">Contacts</NavLink>
                 <NavLink href="/audit">Audit</NavLink>

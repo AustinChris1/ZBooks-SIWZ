@@ -75,3 +75,52 @@ export interface Counterparty {
   added_at: number;
   updated_at?: number;
 }
+
+// A contributor the team pays. Separate from Counterparty: counterparties
+// label addresses ZBooks observes; payees are people you actively pay out to.
+export interface Payee {
+  id: string;
+  label: string;
+  address: string;
+  notes?: string;
+  added_by: string;
+  added_at: number;
+  archived?: boolean;
+}
+
+// Whether the underlying work is done. Only `completed` items enter a batch.
+export type WorkStatus = "in_progress" | "completed";
+// Whether the money has moved. Reconciliation flips `unpaid` -> `paid`.
+export type PayStatus = "unpaid" | "paid" | "failed";
+export type PayoutRunStatus = "draft" | "sent" | "reconciled" | "void";
+
+// A weekly (or ad-hoc) payout. Pays FROM the treasury watched by source_ufvk_id.
+export interface PayoutRun {
+  id: string;
+  title: string;
+  source_ufvk_id?: string;
+  created_by: string;
+  created_at: number;
+  status: PayoutRunStatus;
+  sent_at?: number;
+  note?: string;
+}
+
+// One contributor's line in a run. label/address are denormalised from the
+// payee at creation time so editing/removing a payee never rewrites history.
+export interface PayoutLineItem {
+  id: string;
+  run_id: string;
+  payee_id?: string;
+  label: string;
+  address: string;
+  amount_zec: number;
+  memo?: string;
+  work_status: WorkStatus;
+  pay_status: PayStatus;
+  txid?: string;
+  paid_at?: number;
+  paid_block?: number;
+  // true = auto-matched against a synced treasury tx; false/undefined = marked by hand.
+  reconciled?: boolean;
+}

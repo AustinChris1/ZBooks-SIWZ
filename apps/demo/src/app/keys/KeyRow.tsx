@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Ufvk } from "@/lib/types";
+import { shortenMiddle } from "@/lib/format";
 import { useConfirm } from "@/components/ConfirmDialog";
 
 export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
@@ -67,8 +68,8 @@ export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
             )}
             <SyncBadge status={isSyncing ? "syncing" : k.sync_status} />
           </div>
-          <code className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 break-all">
-            {short(k.ufvk)}
+          <code title={k.ufvk} className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 break-all">
+            {shortenMiddle(k.ufvk, 14, 10)}
           </code>
           <div className="text-[11px] text-neutral-500">
             Added {new Date(k.created_at).toLocaleDateString()} by{" "}
@@ -181,11 +182,6 @@ function SyncBadge({ status }: { status: Ufvk["sync_status"] }) {
       {info.label}
     </span>
   );
-}
-
-function short(s: string): string {
-  if (s.length <= 40) return s;
-  return `${s.slice(0, 24)}…${s.slice(-12)}`;
 }
 
 function shortAddr(a: string): string {

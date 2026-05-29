@@ -53,6 +53,15 @@ export interface UfvkSyncResult {
   syncedAt: string;
 }
 
+// Treasury balance for the pre-flight check and the /payouts treasury panel.
+// Strings keep zatoshi JSON-safe; spendable excludes unconfirmed change.
+export interface UfvkBalance {
+  totalZatoshi: string;
+  spendableZatoshi: string;
+  unconfirmedZatoshi: string;
+  syncedAt: string;
+}
+
 export interface Explorer {
   // Returns null on "not found", throws only on network/API errors.
   getTransaction(txid: string): Promise<TxDetails | null>;
@@ -62,6 +71,9 @@ export interface Explorer {
   // Only LightwalletExplorer satisfies this today. `birthday` is consulted
   // on the wrapper's first sync for this UFVK.
   getTransactionsForUfvk?(ufvk: string, opts?: { birthday?: number }): Promise<UfvkSyncResult>;
+  // Treasury spendable/total for payout pre-flight. Optional: backends that
+  // can't compute it (block explorers) simply omit it.
+  getBalanceForUfvk?(ufvk: string, opts?: { birthday?: number }): Promise<UfvkBalance>;
 }
 
 const BLOCKCHAIR_BASE = "https://api.blockchair.com/zcash";
@@ -180,6 +192,17 @@ export class MockExplorer implements Explorer {
 
   async getRecentMemosToAddress(_address: string, limit = 50): Promise<RecentMemo[]> {
     return this.memos.slice(-limit).reverse();
+  }
+
+  // Synthetic treasury balance so the demo's payout pre-flight has something
+  // to show. ~3.2 ZEC total, ~2.85 spendable (the rest "unconfirmed change").
+  async getBalanceForUfvk(_ufvk: string): Promise<UfvkBalance> {
+    return {
+      totalZatoshi: "320000000",
+      spendableZatoshi: "285000000",
+      unconfirmedZatoshi: "35000000",
+      syncedAt: new Date().toISOString(),
+    };
   }
 }
 
@@ -401,6 +424,35 @@ export class LightwalletExplorer implements Explorer {
         );
       }
       return (await res.json()) as UfvkSyncResult;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async getBalanceForUfvk(
+    ufvk: string,
+    opts: { birthday?: number } = {},
+  ): Promise<UfvkBalance> {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 6 * 60_000);
+    try {
+      const body: { ufvk: string; birthday?: number } = { ufvk };
+      if (Number.isFinite(opts.birthday)) body.birthday = opts.birthday;
+      const res = await fetch(`${this.url.replace(/\/$/, "")}/balance`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        throw new ExplorerError(
+          `lightwallet-rpc /balance returned ${res.status}: ${await res.text().catch(() => "")}`,
+        );
+      }
+      return (await res.json()) as UfvkBalance;
     } finally {
       clearTimeout(timeout);
     }

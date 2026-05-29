@@ -16,10 +16,13 @@ export default function HomePage() {
           DAOs, grant recipients and contractor teams paid in Zcash keep
           pasting txids into Google Sheets every quarter. ZBooks does
           that for them: paste a viewing key, get categorised
-          transactions and a P&amp;L your accountant recognises.
+          transactions and a P&amp;L your accountant recognises. When payday
+          comes, it pays the whole team in one batch.
         </p>
         <p className="text-sm text-neutral-500">
-          Read-only by design. Non-custodial sign-in via{" "}
+          Non-custodial by design. ZBooks reads your books and builds the
+          payout, but the treasurer signs in their own wallet, so your spending
+          key never leaves it. Sign in via{" "}
           <strong className="text-neutral-700 dark:text-neutral-300">Sign in with Zcash</strong>.
           Multi-user roles built in.
         </p>
@@ -35,20 +38,20 @@ export default function HomePage() {
           body="Paste one or more UFVKs. ZBooks gets read-only access; your spending key never leaves the wallet."
         />
         <Card
+          title="Pay everyone in one batch"
+          body="Build a payout run from completed work and settle it in one transaction: one scan, one confirmation. The treasurer signs in their own wallet, and ZBooks reconciles each payment back to its line."
+        />
+        <Card
+          title="Reports your accountant recognises"
+          body="Monthly P&L, contractor totals, and a CSV export shaped for QuickBooks and Xero. Reconciled payouts post themselves."
+        />
+        <Card
           title="Memos become categories"
           body="Shielded memos arrive as the first draft of every transaction's notes. The treasurer reviews, everyone else can just read."
         />
         <Card
-          title="Reports your accountant recognises"
-          body="Monthly P&L, contractor totals, and a CSV export shaped for QuickBooks and Xero."
-        />
-        <Card
           title="Roles, not seats"
-          body="Admin sets policy, treasurer tags, viewer reads. Onboarding a new finance contractor is one sign-in."
-        />
-        <Card
-          title="Non-custodial sign-in"
-          body="No passwords. Sign a SIWZ challenge from Zashi, Zingo, YWallet, or MetaMask + Zcash Snap."
+          body="Admin sets policy, treasurer tags and pays, viewer reads. Onboarding a new finance contractor is one sign-in."
         />
         <Card
           title="Self-hostable on a $3 VPS"

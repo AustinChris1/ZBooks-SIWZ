@@ -42,7 +42,8 @@ ZINGO_VERSION_TAG="${ZINGO_VERSION_TAG:-latest}"  # github release tag, or `carg
 # is endpoint-agnostic — it'll pick up where it left off against the new
 # server. For maximum reliability host your own lightwalletd against a
 # self-hosted Zebra/zcashd full node (60-300GB disk, see Zcash docs).
-LIGHTWALLETD="${LIGHTWALLETD:-https://mainnet.lightwalletd.com:9067}"
+# ECC's mainnet.lightwalletd.com has been unreachable; zec.rocks is the maintained default.
+LIGHTWALLETD="${LIGHTWALLETD:-https://zec.rocks:443}"
 
 # ──────────────────────────────────────────────────────────────────────
 # Sanity checks

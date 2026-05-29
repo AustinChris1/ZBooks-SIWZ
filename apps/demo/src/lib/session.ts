@@ -32,4 +32,9 @@ export function canManageTeam(role: Role): boolean {
   return role === "admin";
 }
 
+// Payouts are a treasury surface: viewers don't see the page, API, or nav link.
+export function canSeePayouts(role: Role): boolean {
+  return role === "admin" || role === "treasurer";
+}
+
 export { getMember };
