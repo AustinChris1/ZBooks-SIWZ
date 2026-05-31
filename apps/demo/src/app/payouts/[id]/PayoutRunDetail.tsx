@@ -52,9 +52,44 @@ export function PayoutRunDetail({
   const { confirm } = useConfirm();
   const [isPending, startTransition] = useTransition();
   const [payOpen, setPayOpen] = useState(false);
+  const [payLoading, setPayLoading] = useState(false);
+  const [freshPreflight, setFreshPreflight] = useState<Preflight | null>(null);
 
   const refresh = () => router.refresh();
   const act = (fn: () => Promise<unknown>) => startTransition(async () => { await fn(); refresh(); });
+
+  // The page-load preflight can go stale before the user clicks Pay. Re-query
+  // treasury balance + rebuild the URI right now, so a sudden balance drop or
+  // a freshly-added line is caught before we open the QR.
+  const openPay = async () => {
+    setPayLoading(true);
+    try {
+      const res = await fetch(`/api/payouts/${run.id}/preflight`, { method: "POST" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast({ message: j.error ?? "Could not refresh treasury balance.", tone: "error" });
+        return;
+      }
+      const fresh = (await res.json()) as Preflight;
+      setFreshPreflight(fresh);
+      if (fresh.count === 0) {
+        toast({ message: "Nothing to pay: no completed unpaid lines.", tone: "error" });
+        return;
+      }
+      if (fresh.sufficient === false) {
+        toast({
+          message: `Treasury short of ${zec(fresh.requiredZec)} ZEC right now. Cannot pay.`,
+          tone: "error",
+        });
+        return;
+      }
+      setPayOpen(true);
+    } catch (err) {
+      toast({ message: (err as Error).message, tone: "error" });
+    } finally {
+      setPayLoading(false);
+    }
+  };
 
   const reconcile = () =>
     act(async () => {
@@ -114,8 +149,8 @@ export function PayoutRunDetail({
       <PreflightBanner
         preflight={preflight}
         canEdit={canEdit}
-        disabled={isPending}
-        onPay={() => setPayOpen(true)}
+        disabled={isPending || payLoading}
+        onPay={openPay}
         onReconcile={reconcile}
       />
 
@@ -192,7 +227,7 @@ export function PayoutRunDetail({
       {payOpen && (
         <PayModal
           runId={run.id}
-          preflight={preflight}
+          preflight={freshPreflight ?? preflight}
           onClose={() => setPayOpen(false)}
           onSent={() => {
             setPayOpen(false);

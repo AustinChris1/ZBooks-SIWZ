@@ -2,8 +2,11 @@ import { getShieldedExplorer } from "./explorer";
 import { getKey, updateKeySyncStatus, upsertTransactions } from "./db";
 
 // In-process lock so a re-click of "Sync" can't run two zingo processes
-// against the same wallet. Multi-process deploys would need a DB lease.
-const inFlight = new Set<string>();
+// against the same wallet. Carries a started_at so a process that crashed
+// mid-sync (without clearing its lock) doesn't block its own retries forever.
+// Cross-process startup recovery is handled by resetStaleSync in db.ts.
+const inFlight = new Map<string, number>();
+const STALE_LOCK_MS = 10 * 60 * 1000;
 
 export interface SyncOutcome {
   ok: boolean;
@@ -17,10 +20,16 @@ export async function syncUfvk(ufvkId: string): Promise<SyncOutcome> {
   const key = await getKey(ufvkId);
   if (!key) return { ok: false, error: "UFVK not found" };
 
-  if (inFlight.has(ufvkId)) {
+  const startedAt = inFlight.get(ufvkId);
+  if (startedAt !== undefined && Date.now() - startedAt < STALE_LOCK_MS) {
     return { ok: false, error: "A sync is already running for this key" };
   }
-  inFlight.add(ufvkId);
+  if (startedAt !== undefined) {
+    console.warn(
+      `[sync] reclaiming stale in-flight lock for ${ufvkId} (${Math.round((Date.now() - startedAt) / 1000)}s old)`,
+    );
+  }
+  inFlight.set(ufvkId, Date.now());
 
   const explorer = getShieldedExplorer();
   if (!explorer) {

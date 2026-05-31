@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createClient, type Client, type Row } from "@libsql/client/web";
+import { decryptUfvk, encryptUfvk, isEncrypted } from "./crypto-at-rest";
 import {
   CATEGORY_LABEL,
   type Category,
@@ -61,12 +62,59 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS fiat_prices (date TEXT PRIMARY KEY, usd REAL NOT NULL, fetched_at INTEGER NOT NULL)`,
 ];
 
-// Lazily create the client and run the (idempotent) schema once per process.
+// Lazily create the client and run the (idempotent) schema + startup
+// cleanups once per process.
 async function db(): Promise<Client> {
   const c = rawClient();
-  if (!_ready) _ready = c.batch(SCHEMA, "write").then(() => undefined);
+  if (!_ready) {
+    _ready = c
+      .batch(SCHEMA, "write")
+      .then(() => migrateUfvksToEncrypted(c))
+      .then(() => resetStaleSync(c));
+  }
   await _ready;
   return c;
+}
+
+// One-time-per-row migration: encrypt any UFVKs that are still stored as
+// plaintext from before encryption-at-rest landed. Idempotent because
+// `encryptUfvk` short-circuits on already-encrypted input.
+async function migrateUfvksToEncrypted(c: Client): Promise<void> {
+  try {
+    const rs = await c.execute("SELECT id, ufvk FROM ufvks");
+    const work = rs.rows
+      .filter((r) => !isEncrypted(String(r.ufvk)))
+      .map((r) => ({ id: String(r.id), ufvk: String(r.ufvk) }));
+    if (work.length === 0) return;
+    const statements = work.map((r) => ({
+      sql: "UPDATE ufvks SET ufvk = ? WHERE id = ?",
+      args: [encryptUfvk(r.ufvk), r.id] as (string | number | null)[],
+    }));
+    await c.batch(statements, "write");
+    console.log(`[db] encrypted ${work.length} UFVK row(s) at rest`);
+  } catch (err) {
+    // Don't block startup: future writes still encrypt, future reads still
+    // handle both forms via decryptUfvk.
+    console.error("[db] UFVK encryption migration failed:", err);
+  }
+}
+
+// Anything still tagged 'syncing' at process startup is left over from a
+// process that died mid-sync (a redeploy is the common cause). The in-memory
+// inFlight set in sync.ts can't see it, so without this reset the row sits
+// permanently stuck. Clear it back to 'idle' so the user can retry.
+async function resetStaleSync(c: Client): Promise<void> {
+  try {
+    const rs = await c.execute({
+      sql: "UPDATE ufvks SET sync_status = 'idle', last_sync_error = ? WHERE sync_status = 'syncing'",
+      args: ["Previous sync was interrupted by a process restart. Retry to sync again."],
+    });
+    if (rs.rowsAffected > 0) {
+      console.log(`[db] reset ${rs.rowsAffected} stale 'syncing' row(s) at startup`);
+    }
+  } catch (err) {
+    console.error("[db] stale-sync reset failed:", err);
+  }
 }
 
 // ---- value coercion ---------------------------------------------------------
@@ -79,11 +127,14 @@ function s(v: Row[string]): string | undefined {
 }
 
 function toUfvk(r: Row): Ufvk {
+  // decryptUfvk returns its input unchanged if the stored value is legacy
+  // plaintext (e.g. between schema-create and the migration completing).
+  const ufvk = decryptUfvk(String(r.ufvk));
   return {
     id: String(r.id),
     owner: String(r.owner ?? ""),
     label: String(r.label),
-    ufvk: String(r.ufvk),
+    ufvk,
     primary: Number(r.is_primary) === 1,
     created_at: Number(r.created_at),
     sync_status: (r.sync_status as SyncStatus) ?? "idle",
@@ -280,8 +331,9 @@ export async function addKey(input: {
   };
   await c.execute({
     sql: "INSERT INTO ufvks (id, owner, label, ufvk, is_primary, created_at, sync_status, birthday) VALUES (?, ?, ?, ?, ?, ?, 'idle', ?)",
-    args: [key.id, key.owner, key.label, key.ufvk, isFirst ? 1 : 0, key.created_at, key.birthday ?? null],
+    args: [key.id, key.owner, key.label, encryptUfvk(key.ufvk), isFirst ? 1 : 0, key.created_at, key.birthday ?? null],
   });
+  // Returned object keeps the plaintext UFVK so callers see what they passed in.
   return key;
 }
 
@@ -765,6 +817,17 @@ export async function reconcileRun(runId: string): Promise<{ matched: number; it
     items.filter((i) => i.txid).map((i) => `${i.txid}:${i.address}:${i.memo ?? ""}`),
   );
 
+  // Count how often each (address, amount, memo) tuple appears among the
+  // completed-unpaid lines. If a tuple repeats, auto-match could pair the
+  // wrong tx with the wrong line, so we refuse it and require manual
+  // mark-paid for those rows.
+  const tupleCount = new Map<string, number>();
+  for (const i of items) {
+    if (i.pay_status === "paid" || i.work_status !== "completed") continue;
+    const k = `${i.address}:${Math.round(i.amount_zec * 1e8)}:${i.memo ?? ""}`;
+    tupleCount.set(k, (tupleCount.get(k) ?? 0) + 1);
+  }
+
   const statements: { sql: string; args: (string | number | null)[] }[] = [];
   let matched = 0;
   const touched: PayoutLineItem[] = [];
@@ -773,10 +836,14 @@ export async function reconcileRun(runId: string): Promise<{ matched: number; it
     if (item.pay_status === "paid") continue;
     if (item.work_status !== "completed") continue;
     const itemZat = Math.round(item.amount_zec * 1e8);
+    const tupleKey = `${item.address}:${itemZat}:${item.memo ?? ""}`;
+    if ((tupleCount.get(tupleKey) ?? 0) > 1) continue; // ambiguous; manual settlement required
     const hit = outTxs.find((t) => {
       if (!t.counterparty || t.counterparty !== item.address) return false;
       if (Math.round(Math.abs(t.amount_zec) * 1e8) !== itemZat) return false;
-      if (item.memo && t.memo && !t.memo.includes(item.memo)) return false;
+      // Strict memo equality: the old `includes` substring let a longer memo
+      // accidentally match a shorter line memo.
+      if (item.memo && t.memo !== item.memo) return false;
       return !usedTxKeys.has(`${t.txid}:${item.address}:${t.memo ?? ""}`);
     });
     if (!hit) continue;

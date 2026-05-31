@@ -3,11 +3,24 @@ import { verifyMemoChallenge } from "@siwz/core";
 import { getDefaultExplorer, getShieldedExplorer, type RecentMemo, type RecentOutput } from "@/lib/explorer";
 import { signSnapEnvelope } from "@/lib/snap-auth";
 import { createHash } from "node:crypto";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 // POST { token } → 200 on match, 202 to keep polling, 4xx/5xx on error.
 export async function POST(req: Request) {
+  // Client polls at ~6s. A real user pings here ~10x/min while waiting for a
+  // tx; 90/min per IP allows a few clients on a shared NAT and still hard-caps
+  // an attacker scripting fast polls against random tokens.
+  const ip = clientIp(req);
+  const gate = rateLimit({ key: `memo-poll:${ip}`, max: 90, windowMs: 60_000 });
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests, slow down." },
+      { status: 429, headers: { "retry-after": String(gate.retryAfterSeconds) } },
+    );
+  }
+
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) return NextResponse.json({ error: "server misconfigured" }, { status: 500 });
 

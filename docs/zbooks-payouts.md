@@ -53,7 +53,7 @@ multi-payment URI as one multi-output transaction is wallet-dependent:
 
 - **YWallet**: multi-recipient send. Works.
 - **Zingo** (mobile and `zingo-cli send`): multi-recipient. Works.
-- **Zashi**: single-recipient ZIP 321 as of mid-2026 ([issue #43](https://github.com/Electric-Coin-Company/zashi-android)). A batch URI degrades to paying only the first line, which reintroduces the sequential-send stall.
+- **Zodl**: single-recipient ZIP 321 as of mid-2026 ([issue #43](https://github.com/Electric-Coin-Company/Zodl-android)). A batch URI degrades to paying only the first line, which reintroduces the sequential-send stall.
 
 Pay the treasury from a multi-recipient wallet (YWallet or Zingo). The Pay dialog
 says this inline. Roadmap option B removes this constraint entirely.

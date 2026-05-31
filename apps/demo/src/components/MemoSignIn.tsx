@@ -285,7 +285,7 @@ export function MemoSignIn() {
         <div>
           <div className="text-base font-semibold">Send a tiny ZEC payment to sign in</div>
           <p className="text-xs opacity-70 mt-1 max-w-md">
-            Works with every shielded Zcash wallet (Zashi, Zingo, YWallet, Zodl,
+            Works with every shielded Zcash wallet (Zodl, Zingo, YWallet,
             eZcash, Zenith, Cake, Brave, …). The amount is a few cents and
             uniquely identifies your sign-in attempt, so no message-signing
             support is required from your wallet.

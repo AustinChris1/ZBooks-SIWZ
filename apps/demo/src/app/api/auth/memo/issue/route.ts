@@ -8,6 +8,7 @@ import {
   getShieldedExplorer,
   isMockExplorer,
 } from "@/lib/explorer";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,18 @@ const KNOWN_LEAKED_ADDRESSES = new Set([
 ]);
 
 export async function POST(req: Request) {
+  // Cheap unauthenticated endpoint, easy to abuse for DoS amplification.
+  // 20 issues per minute per IP is plenty for a real user re-trying a flaky
+  // wallet send a few times.
+  const ip = clientIp(req);
+  const gate = rateLimit({ key: `memo-issue:${ip}`, max: 20, windowMs: 60_000 });
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "Too many sign-in attempts. Slow down and try again shortly." },
+      { status: 429, headers: { "retry-after": String(gate.retryAfterSeconds) } },
+    );
+  }
+
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) return NextResponse.json({ error: "server misconfigured: missing NEXTAUTH_SECRET" }, { status: 500 });
   if (!SERVICE_ADDRESS) {
