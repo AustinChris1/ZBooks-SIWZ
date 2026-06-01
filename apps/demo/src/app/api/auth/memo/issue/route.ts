@@ -20,6 +20,9 @@ const DEMO_MODE = process.env.SIWZ_DEMO === "1";
 const KNOWN_LEAKED_ADDRESSES = new Set([
   "t1QzwK7oMTdr4XF32s5RAtK9Eq45NFtdSbo",
   "t1MKNc8vbN8ybMUJFcdKf6i4bRTKvtQCxpH",
+  // Derived from FIXED_PRIV (Uint8Array(32).fill(7)) in the @siwz/core test
+  // suite. The private key ships in the npm tarball; anyone can sweep this.
+  "t1Hxw6JqWMnhDK5jRCieg5bFHM2qt7UtQvu",
 ]);
 
 export async function POST(req: Request) {

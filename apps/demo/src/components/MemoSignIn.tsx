@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 
 // Memo-challenge sign-in: server issues a challenge, user pays a tiny
 // amount with a nonce-bearing memo, server detects on-chain, signs them in.
@@ -23,7 +22,6 @@ interface ReauthBundle {
 }
 
 export function MemoSignIn() {
-  const router = useRouter();
   const [challenge, setChallenge] = useState<MemoChallengeData | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [polling, setPolling] = useState(false);
@@ -97,8 +95,9 @@ export function MemoSignIn() {
         setError("Stored sign-in expired. Please sign in again.");
         return;
       }
-      router.refresh();
-      router.push("/keys");
+      // Hard nav: router.refresh()+push() races the App Router cache
+      // and lands on /keys with a stale (signed-out) navbar.
+      window.location.href = "/keys";
     } finally {
       setReauthBusy(false);
     }
@@ -201,8 +200,8 @@ export function MemoSignIn() {
       window.localStorage.setItem(REAUTH_STORAGE_KEY, JSON.stringify(bundle));
       setReauthBundle(bundle);
     } catch { /* private mode */ }
-    router.refresh();
-    router.push("/keys");
+    // See quickReauth for why this is hard-nav not router.push().
+    window.location.href = "/keys";
   };
 
   const tryManualTxid = async () => {

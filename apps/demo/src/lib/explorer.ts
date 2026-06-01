@@ -1,8 +1,10 @@
 // Explorer abstraction for SIWZ memo-challenge verification and UFVK sync.
 // Three backends share one interface: Blockchair (transparent only),
 // ZcashRpcExplorer (zcashd/zaino), LightwalletExplorer (apps/lightwallet-rpc).
+// Strict superset of @siwz/core's MemoExplorer contract.
 
 import { ZcashRpcClient, decodeMemoHex, ZcashRpcError } from "./zcash-rpc";
+import type { MemoExplorer } from "@siwz/core";
 
 export interface TxOutput {
   address: string;
@@ -62,7 +64,7 @@ export interface UfvkBalance {
   syncedAt: string;
 }
 
-export interface Explorer {
+export interface Explorer extends MemoExplorer {
   // Returns null on "not found", throws only on network/API errors.
   getTransaction(txid: string): Promise<TxDetails | null>;
   getRecentOutputsToAddress(address: string, limit?: number): Promise<RecentOutput[]>;

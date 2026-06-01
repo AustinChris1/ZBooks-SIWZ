@@ -69,13 +69,23 @@ says this inline. Roadmap option B removes this constraint entirely.
    completed, unpaid items enter the batch; in-progress work is left out.
 4. **Pre-flight**: before generating the QR, ZBooks checks the treasury's
    spendable balance against `total + estimated ZIP 317 fee`. It refuses to
-   present a batch the treasury cannot cover.
+   present a batch the treasury cannot cover. The same check runs again at the
+   moment of clicking Pay (via `POST /api/payouts/[id]/preflight`), so a sudden
+   balance drop between page load and click is caught before the QR opens.
 5. **Pay**: scan the single QR (or copy the URI, or open in wallet), approve in
    the wallet.
 6. **Reconcile**: ZBooks re-syncs the treasury, finds the outgoing tx, matches
    each output (address and amount) back to its line item, and flips it `paid`
    with the txid. Unmatched lines stay pending. Treasurers can also paste a txid
    to settle a line by hand.
+
+   Match strictness: when two completed-unpaid lines share an identical
+   (address, amount, memo) tuple, auto-reconcile skips both rather than risk
+   mis-crediting; the treasurer marks those manually. Memo comparison is strict
+   equality, not substring, so a longer wallet-memo never accidentally satisfies
+   a shorter line memo. See `reconcileRun` in
+   [`db.ts`](../apps/demo/src/lib/db.ts) and
+   [security.md](./security.md#reconcile-match-strictness).
 7. **Accounting**: a reconciled payout auto-tags as a `contractor` expense and
    labels the counterparty from the payee, so the run posts straight into the P&L.
 

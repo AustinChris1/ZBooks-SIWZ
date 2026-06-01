@@ -38,6 +38,20 @@ First sign-in becomes admin on a fresh instance. With `SIWZ_ADMIN_ADDRESSES`
 set, only listed identities are admin and everyone else joins as viewer. Admins
 promote members on the Team page.
 
+### Key ownership
+
+A treasurer can rename, sync, and remove the UFVKs they added themselves, but
+not UFVKs added by other team members. Only admins can rename or remove someone
+else's key. The `owner` field is set at add time to the signed-in identity, and
+the policy is enforced in
+[`apps/demo/src/app/api/keys/[id]/route.ts`](../apps/demo/src/app/api/keys/[id]/route.ts).
+Full details in [security.md](./security.md#key-ownership-on-mutation).
+
+UFVKs are also encrypted at rest in Turso (AES-256-GCM, key derived from
+`NEXTAUTH_SECRET`). A leaked Turso token alone no longer reveals the team's
+viewing keys. See [security.md](./security.md#ufvk-encryption-at-rest) for the
+storage format and key-rotation caveats.
+
 ### Using ZBooks as a viewer
 You can read everything except payouts. Browse `/transactions`, filter and search,
 open `/reports` for the P&L and download the CSV, and check `/audit` to see who
