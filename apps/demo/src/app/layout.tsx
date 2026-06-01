@@ -43,7 +43,7 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);
-  const address = (session?.user as { address?: string } | undefined)?.address;
+  const address = session?.user?.address;
   const role = address ? (await getMember(address))?.role : undefined;
   const showPayouts = role ? canSeePayouts(role) : false;
 

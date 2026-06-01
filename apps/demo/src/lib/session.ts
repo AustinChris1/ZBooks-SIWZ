@@ -5,7 +5,7 @@ import { ensureMember, getMember, type Role } from "./db";
 // Resolves the signed-in user. Side-effect: first ever sign-in becomes admin.
 export async function currentUser(): Promise<{ address: string; role: Role } | null> {
   const session = await getServerSession(authOptions);
-  const address = (session?.user as { address?: string } | undefined)?.address;
+  const address = session?.user?.address;
   if (!address) return null;
   const role = await ensureMember(address);
   return { address, role };

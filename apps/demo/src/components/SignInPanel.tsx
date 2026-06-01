@@ -40,7 +40,7 @@ export function SignInPanel() {
   }
 
   if (session?.user) {
-    const addr = (session.user as { address?: string }).address;
+    const addr = session.user.address;
     return (
       <div className="rounded-lg border border-black/10 dark:border-white/10 p-4 flex flex-col gap-3">
         <div className="text-sm opacity-70">Signed in as</div>

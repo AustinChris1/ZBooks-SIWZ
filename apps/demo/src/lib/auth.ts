@@ -138,28 +138,25 @@ const snapProvider = CredentialsProvider({
 });
 
 export const authOptions: NextAuthOptions = {
-  providers: [
-    // SiwzProvider returns a config object; NextAuth v4 needs it wrapped in CredentialsProvider.
-    CredentialsProvider(siwzConfig as Parameters<typeof CredentialsProvider>[0]),
-    snapProvider,
-    memoProvider,
-  ],
+  providers: [siwzConfig, snapProvider, memoProvider],
   session: { strategy: "jwt" },
   pages: { signIn: "/" },
   secret: EFFECTIVE_SECRET,
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.address = (user as { id: string }).id;
-        token.addressType = (user as { addressType?: string }).addressType;
-        token.network = (user as { network?: string }).network;
+        token.address = user.id;
+        token.addressType = user.addressType;
+        token.network = user.network;
       }
       return token;
     },
     async session({ session, token }) {
-      (session.user as Record<string, unknown>).address = token.address;
-      (session.user as Record<string, unknown>).addressType = token.addressType;
-      (session.user as Record<string, unknown>).network = token.network;
+      if (session.user) {
+        session.user.address = token.address;
+        session.user.addressType = token.addressType;
+        session.user.network = token.network;
+      }
       return session;
     },
   },
