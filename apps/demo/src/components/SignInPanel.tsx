@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SignInWithZcash, type SnapIdentity } from "@siwz/react";
+import { SignInWithZcash, SignOut, type SnapIdentity } from "@siwz/react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { MemoSignIn } from "./MemoSignIn";
@@ -52,12 +52,13 @@ export function SignInPanel() {
           >
             Open dashboard →
           </button>
-          <button
-            className="rounded-md border border-black/15 dark:border-white/15 px-3 py-1.5 text-sm"
-            onClick={() => signOut({ callbackUrl: "/" })}
-          >
-            Sign out
-          </button>
+          <SignOut
+            onSignOut={() => signOut({ callbackUrl: "/" })}
+            classNames={{
+              root: "",
+              button: "rounded-md border border-black/15 dark:border-white/15 px-3 py-1.5 text-sm",
+            }}
+          />
         </div>
       </div>
     );
