@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import type { Ufvk } from "@/lib/types";
+import { RelativeTime } from "@/components/RelativeTime";
 
 // Top-of-page sync summary with "Refresh all" fan-out.
 export function SyncBar({ keys, canEdit }: { keys: Ufvk[]; canEdit: boolean }) {
@@ -70,11 +71,16 @@ export function SyncBar({ keys, canEdit }: { keys: Ufvk[]; canEdit: boolean }) {
         aria-hidden
       />
       <div className="flex-1 text-neutral-600 dark:text-neutral-300">
-        {anySyncing
-          ? `Syncing ${keys.filter((k) => k.sync_status === "syncing").length || keys.length} key${keys.length === 1 ? "" : "s"}…`
-          : oldest
-          ? `Last sync ${relativeTime(oldest)} across ${keys.length} key${keys.length === 1 ? "" : "s"}`
-          : "No data synced yet"}
+        {anySyncing ? (
+          `Syncing ${keys.filter((k) => k.sync_status === "syncing").length || keys.length} key${keys.length === 1 ? "" : "s"}…`
+        ) : oldest ? (
+          <>
+            Last sync <RelativeTime ts={oldest} /> across {keys.length} key
+            {keys.length === 1 ? "" : "s"}
+          </>
+        ) : (
+          "No data synced yet"
+        )}
         {errors.length > 0 && !anySyncing && (
           <span className="ml-2 text-red-600 dark:text-red-400">
             {errors.length} key{errors.length === 1 ? " has" : "s have"} sync errors
@@ -94,14 +100,3 @@ export function SyncBar({ keys, canEdit }: { keys: Ufvk[]; canEdit: boolean }) {
   );
 }
 
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const sec = Math.round(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  return `${day}d ago`;
-}

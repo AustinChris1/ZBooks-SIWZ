@@ -10,6 +10,59 @@ custodies or sends them. The treasurer signs in their own wallet.
 This closes a useful loop for a small ZEC-paid team. It is not a full
 finance suite (see Limits below).
 
+## Importing from ZecBounties
+
+ZBooks pulls completed-and-approved-but-unpaid bounties straight from
+[ZecHub Bounties](https://bounties.zechub.wiki) (`zec-bounties`, last year's
+ZecHub Hackathon winner) via its public API at `https://zechub.zone/api/bounties`.
+
+On `/payouts`, treasurers and admins see an "Import from ZecBounties" button.
+It opens `/payouts/sources/zec-bounties`, which mirrors how zec-bounties is
+actually used (four UI tabs: TO_DO, IN_PROGRESS, IN_REVIEW, DONE) and treats
+`status` as the primary signal:
+
+| zec-bounties status | ZBooks treats as | Reason |
+|---|---|---|
+| `TO_DO` | Not payable | Bounty is unapproved / draft |
+| `IN_PROGRESS` | **Payable** | Approved bounty being worked; treasurer can schedule the payment in advance |
+| `IN_REVIEW` | **Payable** | Approved bounty awaiting reviewer sign-off; queue the payment now |
+| `DONE` | Not payable | ZecHub already handled (or is handling) the payment upstream |
+| `CANCELLED` | Not payable | Bounty abandoned |
+
+Plus the safety checks: `isApproved: true`, `isPaid: false`, non-empty
+assignee `z_address`, `bountyAmount > 0`, and address network matches this
+ZBooks deployment's `SIWZ_NETWORK`.
+
+Each payable bounty becomes one payout line item with the assignee's
+`z_address`, the `bountyAmount`, and a memo of the form `zec-bounty: <title>`.
+Bounties that don't qualify still show up in an "Other bounties" section
+grouped by reason ("Already paid upstream", "Wrong network", "TO_DO", etc.),
+so the operator always sees what's there.
+
+Three guardrails:
+
+- **Network detection.** Each bounty's `z_address` is matched against this
+  ZBooks deployment's `SIWZ_NETWORK`. Bounties on a different network
+  (e.g. a `utest1…` testnet UA when ZBooks runs on mainnet) appear in an
+  "Off-network" section below, greyed out, with a "cannot pay, address is on
+  testnet" explanation. The API filter for the active selection only lets
+  on-network bounties through to a payout run.
+- **Dedup via `external_ref`.** Every imported line item carries
+  `external_ref = "zec-bounties:<bounty-id>"`. Re-imports skip bounties whose
+  ref already exists anywhere in `payout_items`. The same bounty can't be paid
+  twice through ZBooks even if the upstream `isPaid` flag is out of date.
+- **Treasurer-only.** Viewers can browse the import preview but the
+  `POST /api/payouts/import-zec-bounties` endpoint requires `admin` or
+  `treasurer`.
+
+After import, the new run lands in the standard payouts workflow: pre-flight,
+batch QR, treasurer signs, reconcile. ZBooks doesn't push the `isPaid` flag back
+to zec-bounties; that's manual on their side today (a PR to add a
+`PATCH /api/bounties/:id/mark-paid` endpoint would let ZBooks close the loop).
+
+For point-in-time imports (e.g. once a week), point a scheduled job at
+`POST /api/payouts/import-zec-bounties` with the appropriate target shape.
+
 ## Why not just let ZBooks send the money?
 
 A viewing key (UFVK) is read-only. It can see the treasury and propose a spend,

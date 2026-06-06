@@ -44,8 +44,12 @@ export interface RunPreflight {
   requiredZec: number;
   balance: UfvkBalance | null;
   spendableZec: number | null;
-  // null when the backend can't report a balance; UI shows unknown and doesn't block.
+  // null when the backend can't report a balance; UI shows the reason and doesn't block.
   sufficient: boolean | null;
+  /** Why balance is null. "no-source" = run has no source_ufvk_id; "no-backend"
+   *  = no shielded explorer configured; "fetch-failed:..." = backend errored.
+   *  undefined when balance is non-null. */
+  balanceError?: string;
   uri: string | null;
 }
 
@@ -57,8 +61,19 @@ export async function runPreflight(run: RunWithItems): Promise<RunPreflight> {
   const requiredZec = totalZec + feeZec;
 
   let balance: UfvkBalance | null = null;
-  if (run.source_ufvk_id) {
-    balance = await getTreasuryBalance(run.source_ufvk_id).catch(() => null);
+  let balanceError: string | undefined;
+  if (!run.source_ufvk_id) {
+    balanceError = "no-source";
+  } else {
+    try {
+      balance = await getTreasuryBalance(run.source_ufvk_id);
+      if (balance == null) balanceError = "no-backend";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      balanceError = `fetch-failed: ${msg}`;
+      // Surface this server-side so the dev console actually shows what failed.
+      console.error(`[payouts] balance fetch failed for run ${run.id}:`, msg);
+    }
   }
   const spendableZec = balance ? Number(balance.spendableZatoshi) / 1e8 : null;
   const sufficient = spendableZec == null ? null : spendableZec + 1e-8 >= requiredZec;
@@ -71,6 +86,7 @@ export async function runPreflight(run: RunWithItems): Promise<RunPreflight> {
     balance,
     spendableZec,
     sufficient,
+    balanceError,
     uri: built?.uri ?? null,
   };
 }

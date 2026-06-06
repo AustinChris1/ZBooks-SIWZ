@@ -1,19 +1,37 @@
 import { redirect } from "next/navigation";
-import { listTransactions, listKeys, counterpartyLabelMap } from "@/lib/db";
+import { listTransactionsPage, listKeys, counterpartyLabelMap } from "@/lib/db";
 import { canTag, currentUser } from "@/lib/session";
+import { Pagination, parsePageParam } from "@/components/Pagination";
 import { SyncBar } from "./SyncBar";
 import { TransactionsTable } from "./TransactionsTable";
 
 export const dynamic = "force-dynamic";
 
-export default async function TransactionsPage() {
+const PAGE_SIZE = 50;
+
+interface SearchParams {
+  page?: string | string[];
+}
+
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
   const user = await currentUser();
   if (!user) redirect("/");
 
-  const txs = await listTransactions();
-  const keys = await listKeys();
+  const page = parsePageParam(searchParams?.page);
+  const offset = (page - 1) * PAGE_SIZE;
+
+  const [{ items: txs, total }, keys, cpMap] = await Promise.all([
+    listTransactionsPage({ limit: PAGE_SIZE, offset }),
+    listKeys(),
+    counterpartyLabelMap(),
+  ]);
+
   const keyLabels = Object.fromEntries(keys.map((k) => [k.id, k.label]));
-  const counterpartyLabels = Object.fromEntries((await counterpartyLabelMap()).entries());
+  const counterpartyLabels = Object.fromEntries(cpMap.entries());
   const editable = canTag(user.role);
   const untaggedCount = txs.filter((t) => !t.tag).length;
 
@@ -35,7 +53,7 @@ export default async function TransactionsPage() {
 
           {untaggedCount > 0 && (
             <div className="text-xs text-neutral-500">
-              <strong className="text-zcash-dark dark:text-zcash-yellow">{untaggedCount}</strong> untagged transactions.
+              <strong className="text-zcash-dark dark:text-zcash-yellow">{untaggedCount}</strong> untagged on this page.
             </div>
           )}
 
@@ -44,6 +62,14 @@ export default async function TransactionsPage() {
             keyLabels={keyLabels}
             counterpartyLabels={counterpartyLabels}
             editable={editable}
+          />
+
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            basePath="/transactions"
+            label="transactions"
           />
         </>
       )}

@@ -58,7 +58,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS counterparties (address TEXT PRIMARY KEY, label TEXT NOT NULL, notes TEXT, added_by TEXT, added_at INTEGER NOT NULL, updated_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS payees (id TEXT PRIMARY KEY, label TEXT NOT NULL, address TEXT NOT NULL, notes TEXT, added_by TEXT, added_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS payout_runs (id TEXT PRIMARY KEY, title TEXT NOT NULL, source_ufvk_id TEXT, created_by TEXT, created_at INTEGER NOT NULL, status TEXT NOT NULL, sent_at INTEGER, note TEXT)`,
-  `CREATE TABLE IF NOT EXISTS payout_items (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payee_id TEXT, label TEXT NOT NULL, address TEXT NOT NULL, amount_zec REAL NOT NULL, memo TEXT, work_status TEXT NOT NULL, pay_status TEXT NOT NULL, txid TEXT, paid_at INTEGER, paid_block INTEGER, reconciled INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS payout_items (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payee_id TEXT, label TEXT NOT NULL, address TEXT NOT NULL, amount_zec REAL NOT NULL, memo TEXT, work_status TEXT NOT NULL, pay_status TEXT NOT NULL, txid TEXT, paid_at INTEGER, paid_block INTEGER, reconciled INTEGER, external_ref TEXT)`,
   `CREATE TABLE IF NOT EXISTS fiat_prices (date TEXT PRIMARY KEY, usd REAL NOT NULL, fetched_at INTEGER NOT NULL)`,
 ];
 
@@ -70,6 +70,7 @@ async function db(): Promise<Client> {
     _ready = c
       .batch(SCHEMA, "write")
       .then(() => migrateUfvksToEncrypted(c))
+      .then(() => migrateAddExternalRefColumn(c))
       .then(() => resetStaleSync(c));
   }
   await _ready;
@@ -96,6 +97,26 @@ async function migrateUfvksToEncrypted(c: Client): Promise<void> {
     // Don't block startup: future writes still encrypt, future reads still
     // handle both forms via decryptUfvk.
     console.error("[db] UFVK encryption migration failed:", err);
+  }
+}
+
+// Schema-evolution helper: adds external_ref to payout_items if the column
+// is missing (Turso/libSQL has no IF NOT EXISTS for ADD COLUMN, so we attempt
+// and swallow the "duplicate column" error). Then creates the lookup index.
+// The index can't live in the initial SCHEMA batch because that batch runs
+// before this migration on first deploys with a pre-existing payout_items
+// table that lacks the column.
+async function migrateAddExternalRefColumn(c: Client): Promise<void> {
+  try {
+    await c.execute("ALTER TABLE payout_items ADD COLUMN external_ref TEXT");
+    console.log("[db] added external_ref column to payout_items");
+  } catch {
+    // Column already exists. Ignore.
+  }
+  try {
+    await c.execute("CREATE INDEX IF NOT EXISTS idx_payout_items_external_ref ON payout_items (external_ref)");
+  } catch (err) {
+    console.error("[db] failed to create external_ref index:", err);
   }
 }
 
@@ -217,6 +238,7 @@ function toItem(r: Row): PayoutLineItem {
     paid_at: n(r.paid_at),
     paid_block: n(r.paid_block),
     reconciled: Number(r.reconciled) === 1 ? true : undefined,
+    external_ref: s(r.external_ref),
   };
 }
 
@@ -401,6 +423,34 @@ export async function listTransactions(): Promise<Transaction[]> {
   const c = await db();
   const rs = await c.execute("SELECT * FROM transactions ORDER BY timestamp DESC");
   return rs.rows.map(toTx);
+}
+
+/** Paginated read for /transactions and /audit. Returns the slice + the
+ *  total row count so the UI can render "X of N". `taggedOnly` flips the
+ *  query for /audit, which is just /transactions filtered to rows with a
+ *  tagged_at timestamp. */
+export async function listTransactionsPage(opts: {
+  limit: number;
+  offset: number;
+  taggedOnly?: boolean;
+}): Promise<{ items: Transaction[]; total: number }> {
+  const c = await db();
+  const where = opts.taggedOnly ? "WHERE tagged_at IS NOT NULL" : "";
+  const orderBy = opts.taggedOnly ? "tagged_at" : "timestamp";
+  const [count, page] = await c.batch(
+    [
+      { sql: `SELECT COUNT(*) AS n FROM transactions ${where}`, args: [] },
+      {
+        sql: `SELECT * FROM transactions ${where} ORDER BY ${orderBy} DESC LIMIT ? OFFSET ?`,
+        args: [opts.limit, opts.offset],
+      },
+    ],
+    "read",
+  );
+  return {
+    total: Number(count.rows[0]?.n ?? 0),
+    items: page.rows.map(toTx),
+  };
 }
 
 export async function tagTransaction(id: string, input: {
@@ -701,6 +751,7 @@ export async function addLineItem(
     amountZec: number;
     memo?: string;
     workStatus?: WorkStatus;
+    externalRef?: string;
   },
 ): Promise<PayoutLineItem> {
   const c = await db();
@@ -716,14 +767,28 @@ export async function addLineItem(
     memo: input.memo?.trim() || undefined,
     work_status: input.workStatus ?? "in_progress",
     pay_status: "unpaid",
+    external_ref: input.externalRef?.trim() || undefined,
   };
   if (!item.address) throw new Error("address required");
   if (!(item.amount_zec > 0)) throw new Error("amount must be positive");
   await c.execute({
-    sql: "INSERT INTO payout_items (id, run_id, payee_id, label, address, amount_zec, memo, work_status, pay_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unpaid')",
-    args: [item.id, item.run_id, item.payee_id ?? null, item.label, item.address, item.amount_zec, item.memo ?? null, item.work_status],
+    sql: "INSERT INTO payout_items (id, run_id, payee_id, label, address, amount_zec, memo, work_status, pay_status, external_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?)",
+    args: [item.id, item.run_id, item.payee_id ?? null, item.label, item.address, item.amount_zec, item.memo ?? null, item.work_status, item.external_ref ?? null],
   });
   return item;
+}
+
+/** Look up which external_refs already exist anywhere in payout_items.
+ *  Used to dedupe re-imports from the same upstream system (e.g. zec-bounties). */
+export async function findExistingExternalRefs(refs: string[]): Promise<Set<string>> {
+  if (refs.length === 0) return new Set();
+  const c = await db();
+  const placeholders = refs.map(() => "?").join(", ");
+  const rs = await c.execute({
+    sql: `SELECT external_ref FROM payout_items WHERE external_ref IN (${placeholders})`,
+    args: refs,
+  });
+  return new Set(rs.rows.map((r) => String(r.external_ref)));
 }
 
 export async function updateLineItem(

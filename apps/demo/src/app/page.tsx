@@ -63,6 +63,9 @@ export default function HomePage() {
           Accounting &amp; payroll for{" "}
           <span className="text-zcash-yellow">shielded ZEC teams</span>.
         </h1>
+        <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-2xl leading-relaxed">
+          Built for the workflow Zcash DAOs like ZecHub run today. Read-only UFVKs, batch payouts that reconcile themselves, P&amp;L your accountant recognises.
+        </p>
       </motion.section>
 
       <motion.section

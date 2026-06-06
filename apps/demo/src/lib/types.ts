@@ -4,6 +4,7 @@
 export type Role = "admin" | "treasurer" | "viewer";
 
 export type Category =
+  | "bounty"
   | "grant_payout"
   | "contractor"
   | "expense"
@@ -13,7 +14,11 @@ export type Category =
   | "income"
   | "other";
 
+// Defaults align with ZecHub-style DAO bookkeeping (Bounty / Grant /
+// Contractor) so a fresh ZBooks deploy matches how Zcash DAOs already
+// categorise spend in Dework + treasury reports.
 export const CATEGORY_LABEL: Record<Category, string> = {
+  bounty: "Bounty",
   grant_payout: "Grant payout",
   contractor: "Contractor",
   expense: "Expense",
@@ -123,4 +128,7 @@ export interface PayoutLineItem {
   paid_block?: number;
   // true = auto-matched against a synced treasury tx; false/undefined = marked by hand.
   reconciled?: boolean;
+  // Stable id from an external system (e.g. "zec-bounties:cmox539px0006...")
+  // used to prevent the same upstream item being imported twice.
+  external_ref?: string;
 }

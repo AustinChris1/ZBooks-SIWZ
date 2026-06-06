@@ -28,6 +28,7 @@ interface Preflight {
   sufficient: boolean | null;
   uri: string | null;
   balance: { totalZatoshi: string; spendableZatoshi: string; unconfirmedZatoshi: string } | null;
+  balanceError?: string;
 }
 
 type IdLabel = { id: string; label: string; address?: string; primary?: boolean };
@@ -265,7 +266,17 @@ function PreflightBanner({
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-neutral-100 dark:border-neutral-800">
         <div className="text-sm">
           {spendableZec == null ? (
-            <span className="text-neutral-500">Treasury balance unknown (backend can&apos;t report it).</span>
+            <span className="text-neutral-500">
+              Treasury balance unknown
+              {preflight.balanceError === "no-source"
+                ? " (no treasury UFVK set on this run)"
+                : preflight.balanceError === "no-backend"
+                ? " (no shielded backend configured: set LIGHTWALLET_RPC_URL or SIWZ_DEMO=1)"
+                : preflight.balanceError?.startsWith("fetch-failed:")
+                ? ` (backend error: ${preflight.balanceError.replace("fetch-failed: ", "")})`
+                : " (backend didn't respond)"}
+              .
+            </span>
           ) : sufficient ? (
             <span className="text-emerald-700 dark:text-emerald-400">
               ✓ Treasury spendable {zec(spendableZec)} ZEC, enough to cover this run.

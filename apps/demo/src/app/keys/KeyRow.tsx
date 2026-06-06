@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { Ufvk } from "@/lib/types";
 import { shortenMiddle } from "@/lib/format";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { RelativeTime } from "@/components/RelativeTime";
 
 export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
   const [isPending, startTransition] = useTransition();
@@ -175,8 +176,8 @@ export function KeyRow({ k, canEdit }: { k: Ufvk; canEdit: boolean }) {
         <div className="flex items-center justify-between text-[11px] text-neutral-500">
           <div className="flex items-center gap-3 flex-wrap">
             {k.last_synced_at ? (
-              <span title={new Date(k.last_synced_at).toLocaleString()}>
-                Last sync {relativeTime(k.last_synced_at)}
+              <span>
+                Last sync <RelativeTime ts={k.last_synced_at} />
               </span>
             ) : (
               <span className="italic">No sync yet</span>
@@ -272,14 +273,3 @@ function computeProgress(k: Ufvk): number | null {
   return Math.max(0, Math.min(100, Math.round((progressed / span) * 100)));
 }
 
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const sec = Math.round(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  return `${day}d ago`;
-}

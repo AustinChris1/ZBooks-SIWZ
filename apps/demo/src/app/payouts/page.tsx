@@ -37,7 +37,20 @@ export default async function PayoutsPage() {
         Non-custodial: ZBooks never holds a spending key.
       </p>
 
-      {canEdit && <NewRunForm keys={keys} />}
+      {canEdit && (
+        <div className="flex flex-col gap-3">
+          <NewRunForm keys={keys} />
+          <div className="text-xs text-neutral-500 flex items-center gap-3 flex-wrap">
+            <span>Import from:</span>
+            <Link
+              href="/payouts/sources/zec-bounties"
+              className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 dark:border-neutral-700 px-3 py-1.5 hover:border-zcash-yellow/60 hover:bg-zcash-yellow/5 transition-colors text-neutral-700 dark:text-neutral-300 font-medium"
+            >
+              <span aria-hidden>🪙</span> ZecBounties
+            </Link>
+          </div>
+        </div>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold tracking-tight">
