@@ -59,7 +59,7 @@ The verifier looks up the txid via the configured `Explorer` implementation, ite
 | Wallet support today | **100%** (every shielded wallet) | <20% (zcash-cli, YWallet) | 1 wallet (when allowlist permits) |
 | Privacy of the auth itself | High (shielded tx, sender hidden) | Low (transparent address & key on the wire) | High (MetaMask-mediated) |
 | Cost to the user | Dust + tx fee (~0.000001 to 0.00001 ZEC dust, plus ZIP 317 fee) | Free | Free |
-| Latency | ~5-15s (block confirm) | Instant | Instant |
+| Latency | ~30s (block confirm) | Instant | Instant |
 | Sybil resistance | High (real ZEC required) | None | None |
 
 The honest summary: memo-challenge gives weaker cryptographic ownership proof than SIWZ-classic (the sender of a shielded tx is hidden, so we only know "someone with funds did this"), but vastly broader wallet support and built-in Sybil resistance. For most use cases (login to a dApp, register an account, vote in a DAO) that's the right trade.
