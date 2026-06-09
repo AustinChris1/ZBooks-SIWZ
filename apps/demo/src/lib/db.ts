@@ -57,7 +57,6 @@ function rawClient(): Client {
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS team (address TEXT PRIMARY KEY, role TEXT NOT NULL, added_by TEXT, added_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS ufvks (id TEXT PRIMARY KEY, owner TEXT, label TEXT NOT NULL, ufvk TEXT NOT NULL, ufvk_hash TEXT, is_primary INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, sync_status TEXT NOT NULL DEFAULT 'idle', last_synced_at INTEGER, last_synced_block INTEGER, last_sync_error TEXT, last_tx_count INTEGER, last_chain_tip INTEGER, wallet_birthday INTEGER, birthday INTEGER)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_ufvks_hash ON ufvks (ufvk_hash) WHERE ufvk_hash IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, ufvk_id TEXT NOT NULL, txid TEXT NOT NULL, direction TEXT NOT NULL, amount_zec REAL NOT NULL, counterparty TEXT, memo TEXT, timestamp INTEGER NOT NULL, block_height INTEGER, tag TEXT, notes TEXT, tagged_by TEXT, tagged_at INTEGER)`,
   `CREATE INDEX IF NOT EXISTS idx_tx_ufvk_txid ON transactions (ufvk_id, txid)`,
   `CREATE TABLE IF NOT EXISTS counterparties (address TEXT PRIMARY KEY, label TEXT NOT NULL, notes TEXT, added_by TEXT, added_at INTEGER NOT NULL, updated_at INTEGER)`,
@@ -142,27 +141,39 @@ async function migrateAddRequiredApprovalsColumn(c: Client): Promise<void> {
 }
 
 // Backfill ufvk_hash for rows added before the dedup column existed.
+// Index creation lives here so it runs AFTER the column is added.
 async function migrateBackfillUfvkHash(c: Client): Promise<void> {
   try {
     await c.execute("ALTER TABLE ufvks ADD COLUMN ufvk_hash TEXT");
-  } catch {}
+    console.log("[db] added ufvk_hash column to ufvks");
+  } catch {
+    // Column already exists.
+  }
   try {
     const rs = await c.execute("SELECT id, ufvk FROM ufvks WHERE ufvk_hash IS NULL");
-    if (rs.rows.length === 0) return;
-    const work = rs.rows.map((r) => ({
-      id: String(r.id),
-      hash: ufvkHash(decryptUfvk(String(r.ufvk))),
-    }));
-    await c.batch(
-      work.map((w) => ({
-        sql: "UPDATE ufvks SET ufvk_hash = ? WHERE id = ?",
-        args: [w.hash, w.id] as (string | number | null)[],
-      })),
-      "write",
-    );
-    console.log(`[db] backfilled ufvk_hash for ${work.length} row(s)`);
+    if (rs.rows.length > 0) {
+      const work = rs.rows.map((r) => ({
+        id: String(r.id),
+        hash: ufvkHash(decryptUfvk(String(r.ufvk))),
+      }));
+      await c.batch(
+        work.map((w) => ({
+          sql: "UPDATE ufvks SET ufvk_hash = ? WHERE id = ?",
+          args: [w.hash, w.id] as (string | number | null)[],
+        })),
+        "write",
+      );
+      console.log(`[db] backfilled ufvk_hash for ${work.length} row(s)`);
+    }
   } catch (err) {
     console.error("[db] ufvk_hash backfill failed:", err);
+  }
+  try {
+    await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ufvks_hash ON ufvks (ufvk_hash) WHERE ufvk_hash IS NOT NULL");
+  } catch (err) {
+    // Most likely cause: a pre-existing duplicate UFVK pair from before the dedup check landed.
+    // App-level addKey() still rejects new duplicates; existing pairs stay as data.
+    console.warn("[db] could not create unique index on ufvks.ufvk_hash:", err);
   }
 }
 
