@@ -105,11 +105,17 @@ ZIP 321 the spec supports multiple payments, but whether a wallet executes a
 multi-payment URI as one multi-output transaction is wallet-dependent:
 
 - **YWallet**: multi-recipient send. Works.
-- **Zingo** (mobile and `zingo-cli send`): multi-recipient. Works.
-- **Zodl**: single-recipient ZIP 321 as of mid-2026 ([issue #43](https://github.com/Electric-Coin-Company/Zodl-android)). A batch URI degrades to paying only the first line, which reintroduces the sequential-send stall.
+- **ZODL**: multi-recipient send. Works.
+- **Zingo** (mobile and `zingo-cli send`): single-recipient ZIP 321 today. A
+  batch URI degrades to paying only the first line, which reintroduces the
+  sequential-send stall.
+- **Cake, Brave**: single-recipient. Same caveat as Zingo.
 
-Pay the treasury from a multi-recipient wallet (YWallet or Zingo). The Pay dialog
-says this inline. Roadmap option B removes this constraint entirely.
+Pay the treasury from a multi-recipient wallet (YWallet or ZODL). For
+single-recipient wallets, copy the URI and pay each recipient in turn. The Pay
+dialog says this inline. Roadmap option B (PCZT) removes the constraint
+entirely by building and broadcasting from ZBooks instead of relying on the
+wallet's batch support.
 
 ## The flow
 

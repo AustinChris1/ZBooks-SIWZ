@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import {
+  getRun,
   markLineItemPaid,
   removeLineItem,
   setLineItemPayStatus,
   updateLineItem,
   type WorkStatus,
 } from "@/lib/db";
+import { loadApprovalState } from "@/lib/payouts";
 import { requireRole } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +39,17 @@ export async function PATCH(
 
   try {
     if (body.action === "mark_paid") {
+      const run = await getRun(params.id);
+      if (!run) return NextResponse.json({ error: "run not found" }, { status: 404 });
+      if (run.required_approvals > 1) {
+        const state = await loadApprovalState(run);
+        if (!state.approved) {
+          return NextResponse.json(
+            { error: `awaiting ${state.required - state.validCount} more approval(s) before marking lines paid` },
+            { status: 409 },
+          );
+        }
+      }
       const txid = typeof body.txid === "string" ? body.txid : undefined;
       return NextResponse.json({ item: markLineItemPaid(params.itemId, { txid }) });
     }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRun, removeRun, updateRun, type PayoutRunStatus } from "@/lib/db";
 import { requireRole } from "@/lib/session";
-import { runPreflight } from "@/lib/payouts";
+import { loadApprovalState, runPreflight } from "@/lib/payouts";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
     patch.status = body.status as PayoutRunStatus;
     if (patch.status === "sent") patch.sent_at = Date.now();
+  }
+
+  if (patch.status === "sent") {
+    const run = await getRun(params.id);
+    if (!run) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (run.required_approvals > 1) {
+      const state = await loadApprovalState(run);
+      if (!state.approved) {
+        return NextResponse.json(
+          { error: `awaiting ${state.required - state.validCount} more approval(s) before marking sent` },
+          { status: 409 },
+        );
+      }
+    }
   }
 
   try {

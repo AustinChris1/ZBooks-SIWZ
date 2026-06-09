@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PayoutLineItem, PayoutRunApproval } from "@/lib/types";
 import { shortenMiddle } from "@/lib/format";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { RelativeTime } from "@/components/RelativeTime";
 
 interface RunData {
   id: string;
@@ -47,6 +48,12 @@ type IdLabel = { id: string; label: string; address?: string; primary?: boolean 
 
 const zec = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 8 });
 
+interface SourceKeySync {
+  syncStatus: string;
+  lastSyncedAt?: number;
+  lastSyncError?: string;
+}
+
 export function PayoutRunDetail({
   run,
   preflight,
@@ -54,6 +61,7 @@ export function PayoutRunDetail({
   keys,
   canEdit,
   currentUserAddress,
+  sourceKeySync,
 }: {
   run: RunData;
   preflight: Preflight;
@@ -61,6 +69,7 @@ export function PayoutRunDetail({
   keys: IdLabel[];
   canEdit: boolean;
   currentUserAddress: string;
+  sourceKeySync: SourceKeySync | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -146,14 +155,18 @@ export function PayoutRunDetail({
     act(async () => {
       const res = await fetch(`/api/payouts/${run.id}/reconcile?sync=1`, { method: "POST" });
       const j = await res.json().catch(() => ({}));
-      toast({
-        message: res.ok
-          ? j.matched > 0
-            ? `Reconciled ${j.matched} payment${j.matched === 1 ? "" : "s"}.`
-            : "No new matching payments found yet."
-          : j.error ?? "Reconcile failed.",
-        tone: res.ok ? "success" : "error",
-      });
+      if (!res.ok) {
+        toast({ message: j.error ?? "Reconcile failed.", tone: "error" });
+        return;
+      }
+      if (j.matched > 0) {
+        toast({ message: `Reconciled ${j.matched} payment${j.matched === 1 ? "" : "s"}.`, tone: "success" });
+      } else {
+        toast({
+          message:
+            "Treasury synced, no matching payment yet. Shielded txs confirm in ~75s; try again in a minute.",
+        });
+      }
     });
 
   const setStatus = (status: RunData["status"]) =>
@@ -182,6 +195,43 @@ export function PayoutRunDetail({
   const sourceKey = keys.find((k) => k.id === run.source_ufvk_id);
   const completed = run.items.filter((i) => i.work_status === "completed");
   const paidCount = run.items.filter((i) => i.pay_status === "paid").length;
+  const unpaidCompletedCount = completed.length - paidCount;
+
+  // Auto-poll after the run is marked sent: shielded txs take ~75s to confirm,
+  // and once they do the treasurer shouldn't have to click anything.
+  const watchUntilRef = useRef<number>(0);
+  const [watching, setWatching] = useState(false);
+  useEffect(() => {
+    if (run.status !== "sent") return;
+    if (unpaidCompletedCount === 0) return;
+    if (!run.source_ufvk_id) return;
+    watchUntilRef.current = Date.now() + 5 * 60_000;
+    setWatching(true);
+    const tick = async () => {
+      if (Date.now() > watchUntilRef.current) {
+        setWatching(false);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/payouts/${run.id}/reconcile?sync=1`, { method: "POST" });
+        if (res.ok) {
+          const j = await res.json();
+          if (j.matched > 0) {
+            setWatching(false);
+            router.refresh();
+            return;
+          }
+        }
+      } catch {}
+    };
+    const t = setInterval(tick, 45_000);
+    const initial = setTimeout(tick, 4_000);
+    return () => {
+      clearInterval(t);
+      clearTimeout(initial);
+      setWatching(false);
+    };
+  }, [run.status, run.id, run.source_ufvk_id, unpaidCompletedCount, router]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -203,6 +253,8 @@ export function PayoutRunDetail({
         disabled={isPending || payLoading}
         onPay={openPay}
         onReconcile={reconcile}
+        sourceKeySync={sourceKeySync}
+        watching={watching}
       />
 
       {run.status === "draft" && run.required_approvals > 1 && (
@@ -219,8 +271,11 @@ export function PayoutRunDetail({
         {sourceKey ? (
           <>
             Payments are detected automatically from <strong>{sourceKey.label}</strong>. Pay the
-            batch, then click <strong>Check for payments</strong>. A row&apos;s <strong>Mark paid</strong> is
-            only for payments made from another wallet.
+            batch, hit <strong>I&apos;ve sent it</strong>, then ZBooks watches the chain for ~5
+            minutes and marks each line paid as soon as the tx confirms (shielded ~75s).
+            <strong> Check for payments</strong> forces a re-check now. A row&apos;s{" "}
+            <strong>Mark paid</strong> button is only the manual fallback if you paid from a
+            wallet ZBooks isn&apos;t watching.
           </>
         ) : (
           <span className="text-amber-600 dark:text-amber-400">
@@ -247,7 +302,14 @@ export function PayoutRunDetail({
         ) : (
           <ul className="flex flex-col gap-2">
             {run.items.map((item) => (
-              <ItemRow key={item.id} runId={run.id} item={item} canEdit={canEdit} onChanged={refresh} />
+              <ItemRow
+                key={item.id}
+                runId={run.id}
+                item={item}
+                canEdit={canEdit}
+                approvalsCleared={preflight.approvals.approved}
+                onChanged={refresh}
+              />
             ))}
           </ul>
         )}
@@ -259,9 +321,22 @@ export function PayoutRunDetail({
         <section className="flex flex-wrap items-center gap-3 pt-2 border-t border-neutral-100 dark:border-neutral-800/60">
           {run.status === "draft" && (
             <button
-              onClick={() => setStatus("sent")}
-              disabled={isPending}
-              className="text-xs rounded-md border border-neutral-300 dark:border-neutral-700 px-2.5 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Mark run as sent?",
+                  body:
+                    "Confirm you have broadcast this batch from your wallet. ZBooks will then watch the treasury for ~5 minutes and mark each line paid as the tx confirms. Use Void run instead if you have not paid yet.",
+                  confirmLabel: "Yes, I have paid",
+                });
+                if (ok) setStatus("sent");
+              }}
+              disabled={isPending || !preflight.approvals.approved}
+              title={
+                !preflight.approvals.approved
+                  ? `Awaiting ${preflight.approvals.required - preflight.approvals.validCount} more approval(s)`
+                  : undefined
+              }
+              className="text-xs rounded-md border border-neutral-300 dark:border-neutral-700 px-2.5 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50"
             >
               Mark run as sent
             </button>
@@ -306,12 +381,16 @@ function PreflightBanner({
   disabled,
   onPay,
   onReconcile,
+  sourceKeySync,
+  watching,
 }: {
   preflight: Preflight;
   canEdit: boolean;
   disabled: boolean;
   onPay: () => void;
   onReconcile: () => void;
+  sourceKeySync: SourceKeySync | null;
+  watching: boolean;
 }) {
   const { count, totalZec, feeZec, requiredZec, spendableZec, sufficient } = preflight;
   return (
@@ -322,6 +401,27 @@ function PreflightBanner({
         <Stat label="Est. fee" value={`${zec(feeZec)} ZEC`} hint="ZIP 317" />
         <Stat label="Required" value={`${zec(requiredZec)} ZEC`} />
       </div>
+
+      {sourceKeySync && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500 -mt-2">
+          {watching ? (
+            <span className="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Watching for payments. Auto-checks every ~45s for 5 minutes.
+            </span>
+          ) : sourceKeySync.lastSyncedAt ? (
+            <>
+              Treasury last synced{" "}
+              <RelativeTime ts={sourceKeySync.lastSyncedAt} className="font-medium" />.
+              {sourceKeySync.syncStatus === "syncing" && (
+                <span className="text-amber-600 dark:text-amber-400">syncing now…</span>
+              )}
+            </>
+          ) : (
+            <span>Treasury not synced yet.</span>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-neutral-100 dark:border-neutral-800">
         <div className="text-sm">
@@ -521,11 +621,13 @@ function ItemRow({
   runId,
   item,
   canEdit,
+  approvalsCleared,
   onChanged,
 }: {
   runId: string;
   item: PayoutLineItem;
   canEdit: boolean;
+  approvalsCleared: boolean;
   onChanged: () => void;
 }) {
   const { toast } = useToast();
@@ -632,9 +734,13 @@ function ItemRow({
             ) : (
               <button
                 onClick={() => patch({ action: "mark_paid" })}
-                disabled={isPending}
-                title="Manually mark paid. Only needed if you paid from a wallet ZBooks is not watching; otherwise use Check for payments."
-                className="text-xs rounded-md border border-neutral-300 dark:border-neutral-700 px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                disabled={isPending || !approvalsCleared}
+                title={
+                  !approvalsCleared
+                    ? "Awaiting approval before any line can be marked paid"
+                    : "Manual fallback for payments made outside the batch. Normal batch payouts settle via Check for payments."
+                }
+                className="text-xs rounded-md border border-neutral-300 dark:border-neutral-700 px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50"
               >
                 Mark paid
               </button>
@@ -815,8 +921,9 @@ function PayModal({
         </div>
 
         <p className="text-xs text-neutral-500 leading-relaxed text-center">
-          Scan in a <strong>multi-recipient</strong> wallet (YWallet or Zingo).
-          Single-recipient wallets only pay the first line, so pay those one by one.
+          Scan in a <strong>multi-recipient</strong> wallet (today: <strong>YWallet</strong> and{" "}
+          <strong>ZODL</strong>). Single-recipient wallets (Zingo, Cake, Brave) only pay the first
+          line. For those, copy the URI and pay each recipient one by one.
         </p>
 
         <div className="flex gap-2">
