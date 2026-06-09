@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createClient, type Client, type Row } from "@libsql/client/web";
 import { decryptUfvk, encryptUfvk, isEncrypted } from "./crypto-at-rest";
 import {
@@ -9,6 +9,7 @@ import {
   type Payee,
   type PayoutLineItem,
   type PayoutRun,
+  type PayoutRunApproval,
   type PayoutRunStatus,
   type Role,
   type SyncStatus,
@@ -16,6 +17,7 @@ import {
   type Transaction,
   type Ufvk,
   type WorkStatus,
+  type WorkspaceSettings,
 } from "./types";
 
 // libSQL (Turso) store. Async, SQL-backed, so it persists on Vercel's
@@ -30,6 +32,7 @@ export type {
   Payee,
   PayoutLineItem,
   PayoutRun,
+  PayoutRunApproval,
   PayoutRunStatus,
   Role,
   SyncStatus,
@@ -37,6 +40,7 @@ export type {
   Transaction,
   Ufvk,
   WorkStatus,
+  WorkspaceSettings,
 };
 
 let _client: Client | undefined;
@@ -57,8 +61,12 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_tx_ufvk_txid ON transactions (ufvk_id, txid)`,
   `CREATE TABLE IF NOT EXISTS counterparties (address TEXT PRIMARY KEY, label TEXT NOT NULL, notes TEXT, added_by TEXT, added_at INTEGER NOT NULL, updated_at INTEGER)`,
   `CREATE TABLE IF NOT EXISTS payees (id TEXT PRIMARY KEY, label TEXT NOT NULL, address TEXT NOT NULL, notes TEXT, added_by TEXT, added_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0)`,
-  `CREATE TABLE IF NOT EXISTS payout_runs (id TEXT PRIMARY KEY, title TEXT NOT NULL, source_ufvk_id TEXT, created_by TEXT, created_at INTEGER NOT NULL, status TEXT NOT NULL, sent_at INTEGER, note TEXT)`,
+  `CREATE TABLE IF NOT EXISTS payout_runs (id TEXT PRIMARY KEY, title TEXT NOT NULL, source_ufvk_id TEXT, created_by TEXT, created_at INTEGER NOT NULL, status TEXT NOT NULL, sent_at INTEGER, note TEXT, required_approvals INTEGER NOT NULL DEFAULT 1)`,
   `CREATE TABLE IF NOT EXISTS payout_items (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payee_id TEXT, label TEXT NOT NULL, address TEXT NOT NULL, amount_zec REAL NOT NULL, memo TEXT, work_status TEXT NOT NULL, pay_status TEXT NOT NULL, txid TEXT, paid_at INTEGER, paid_block INTEGER, reconciled INTEGER, external_ref TEXT)`,
+  `CREATE TABLE IF NOT EXISTS payout_run_approvals (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, approver_address TEXT NOT NULL, comment TEXT, payload_hash TEXT NOT NULL, signature TEXT NOT NULL, approved_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_approvals_run ON payout_run_approvals (run_id)`,
+  `CREATE TABLE IF NOT EXISTS workspace_settings (id INTEGER PRIMARY KEY CHECK (id = 1), min_approvals INTEGER NOT NULL DEFAULT 1, approver_addresses TEXT NOT NULL DEFAULT '[]', updated_at INTEGER, updated_by TEXT)`,
+  `INSERT OR IGNORE INTO workspace_settings (id, min_approvals, approver_addresses) VALUES (1, 1, '[]')`,
   `CREATE TABLE IF NOT EXISTS fiat_prices (date TEXT PRIMARY KEY, usd REAL NOT NULL, fetched_at INTEGER NOT NULL)`,
 ];
 
@@ -71,6 +79,7 @@ async function db(): Promise<Client> {
       .batch(SCHEMA, "write")
       .then(() => migrateUfvksToEncrypted(c))
       .then(() => migrateAddExternalRefColumn(c))
+      .then(() => migrateAddRequiredApprovalsColumn(c))
       .then(() => resetStaleSync(c));
   }
   await _ready;
@@ -117,6 +126,16 @@ async function migrateAddExternalRefColumn(c: Client): Promise<void> {
     await c.execute("CREATE INDEX IF NOT EXISTS idx_payout_items_external_ref ON payout_items (external_ref)");
   } catch (err) {
     console.error("[db] failed to create external_ref index:", err);
+  }
+}
+
+// Add required_approvals to existing payout_runs deployments.
+async function migrateAddRequiredApprovalsColumn(c: Client): Promise<void> {
+  try {
+    await c.execute("ALTER TABLE payout_runs ADD COLUMN required_approvals INTEGER NOT NULL DEFAULT 1");
+    console.log("[db] added required_approvals column to payout_runs");
+  } catch {
+    // Already exists.
   }
 }
 
@@ -220,6 +239,19 @@ function toRun(r: Row): PayoutRun {
     status: r.status as PayoutRunStatus,
     sent_at: n(r.sent_at),
     note: s(r.note),
+    required_approvals: Number(r.required_approvals ?? 1),
+  };
+}
+
+function toApproval(r: Row): PayoutRunApproval {
+  return {
+    id: String(r.id),
+    run_id: String(r.run_id),
+    approver_address: String(r.approver_address),
+    comment: s(r.comment),
+    payload_hash: String(r.payload_hash),
+    signature: String(r.signature),
+    approved_at: Number(r.approved_at),
   };
 }
 
@@ -687,6 +719,9 @@ export async function createRun(input: {
   by: string;
 }): Promise<PayoutRun> {
   const c = await db();
+  // Snapshot at creation so later policy edits don't retroactively shift older runs.
+  const settings = await getWorkspaceSettings();
+  const required = Math.max(1, Math.min(settings.min_approvals, Math.max(1, settings.approver_addresses.length || 1)));
   const run: PayoutRun = {
     id: randomUUID(),
     title: input.title.trim() || "Untitled run",
@@ -695,10 +730,11 @@ export async function createRun(input: {
     created_at: Date.now(),
     status: "draft",
     note: input.note?.trim() || undefined,
+    required_approvals: required,
   };
   await c.execute({
-    sql: "INSERT INTO payout_runs (id, title, source_ufvk_id, created_by, created_at, status, note) VALUES (?, ?, ?, ?, ?, 'draft', ?)",
-    args: [run.id, run.title, run.source_ufvk_id ?? null, run.created_by, run.created_at, run.note ?? null],
+    sql: "INSERT INTO payout_runs (id, title, source_ufvk_id, created_by, created_at, status, note, required_approvals) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)",
+    args: [run.id, run.title, run.source_ufvk_id ?? null, run.created_by, run.created_at, run.note ?? null, run.required_approvals],
   });
   return run;
 }
@@ -734,10 +770,139 @@ export async function removeRun(id: string): Promise<void> {
   await c.batch(
     [
       { sql: "DELETE FROM payout_items WHERE run_id = ?", args: [id] },
+      { sql: "DELETE FROM payout_run_approvals WHERE run_id = ?", args: [id] },
       { sql: "DELETE FROM payout_runs WHERE id = ?", args: [id] },
     ],
     "write",
   );
+}
+
+// ---- Approvals --------------------------------------------------------------
+
+// Hash binds approvals to the exact payable set. Editing an item changes
+// the hash so old approvals don't count toward the threshold any more.
+export function canonicalRunPayload(run: RunWithItems): string {
+  const payable = run.items
+    .filter((i) => i.work_status === "completed" && i.pay_status !== "paid")
+    .map((i) => ({ a: i.address, z: Math.round(i.amount_zec * 1e8), m: i.memo ?? "" }))
+    .sort((x, y) => (x.a < y.a ? -1 : x.a > y.a ? 1 : x.z - y.z || (x.m < y.m ? -1 : x.m > y.m ? 1 : 0)));
+  return JSON.stringify({
+    run_id: run.id,
+    source_ufvk_id: run.source_ufvk_id ?? "",
+    payable,
+  });
+}
+
+export function runPayloadHash(run: RunWithItems): string {
+  return createHash("sha256").update(canonicalRunPayload(run)).digest("hex");
+}
+
+function approvalSecret(): Buffer {
+  const s = process.env.NEXTAUTH_SECRET;
+  if (!s || s.length < 16) throw new Error("NEXTAUTH_SECRET must be set (>= 16 chars) for approvals");
+  return Buffer.from(s, "utf8");
+}
+
+export function signApproval(runId: string, approverAddress: string, payloadHash: string): string {
+  return createHmac("sha256", approvalSecret())
+    .update(`${runId}:${approverAddress}:${payloadHash}`)
+    .digest("hex");
+}
+
+export function verifyApprovalSignature(a: PayoutRunApproval): boolean {
+  const expected = signApproval(a.run_id, a.approver_address, a.payload_hash);
+  const ax = Buffer.from(a.signature, "hex");
+  const bx = Buffer.from(expected, "hex");
+  if (ax.length !== bx.length) return false;
+  return timingSafeEqual(ax, bx);
+}
+
+export async function listRunApprovals(runId: string): Promise<PayoutRunApproval[]> {
+  const c = await db();
+  const rs = await c.execute({
+    sql: "SELECT * FROM payout_run_approvals WHERE run_id = ? ORDER BY approved_at ASC",
+    args: [runId],
+  });
+  return rs.rows.map(toApproval);
+}
+
+export async function addRunApproval(input: {
+  runId: string;
+  approverAddress: string;
+  comment?: string;
+  payloadHash: string;
+}): Promise<PayoutRunApproval> {
+  const c = await db();
+  const dup = await c.execute({
+    sql: "SELECT 1 FROM payout_run_approvals WHERE run_id = ? AND approver_address = ? AND payload_hash = ?",
+    args: [input.runId, input.approverAddress, input.payloadHash],
+  });
+  if (dup.rows.length) throw new Error("Already approved at this payload");
+  const a: PayoutRunApproval = {
+    id: randomUUID(),
+    run_id: input.runId,
+    approver_address: input.approverAddress,
+    comment: input.comment?.trim() || undefined,
+    payload_hash: input.payloadHash,
+    signature: signApproval(input.runId, input.approverAddress, input.payloadHash),
+    approved_at: Date.now(),
+  };
+  await c.execute({
+    sql: "INSERT INTO payout_run_approvals (id, run_id, approver_address, comment, payload_hash, signature, approved_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [a.id, a.run_id, a.approver_address, a.comment ?? null, a.payload_hash, a.signature, a.approved_at],
+  });
+  return a;
+}
+
+export async function revokeRunApproval(runId: string, approverAddress: string): Promise<void> {
+  const c = await db();
+  await c.execute({
+    sql: "DELETE FROM payout_run_approvals WHERE run_id = ? AND approver_address = ?",
+    args: [runId, approverAddress],
+  });
+}
+
+// ---- Workspace settings -----------------------------------------------------
+
+function parseAddresses(raw: unknown): string[] {
+  try {
+    const arr = JSON.parse(String(raw ?? "[]"));
+    if (!Array.isArray(arr)) return [];
+    return arr.map((x) => String(x).trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export async function getWorkspaceSettings(): Promise<WorkspaceSettings> {
+  const c = await db();
+  const rs = await c.execute("SELECT * FROM workspace_settings WHERE id = 1");
+  const r = rs.rows[0];
+  if (!r) return { min_approvals: 1, approver_addresses: [] };
+  return {
+    min_approvals: Number(r.min_approvals ?? 1),
+    approver_addresses: parseAddresses(r.approver_addresses),
+    updated_at: n(r.updated_at),
+    updated_by: s(r.updated_by),
+  };
+}
+
+export async function setWorkspaceSettings(input: {
+  minApprovals: number;
+  approverAddresses: string[];
+  by: string;
+}): Promise<WorkspaceSettings> {
+  const min = Math.max(1, Math.floor(input.minApprovals));
+  const addrs = Array.from(new Set(input.approverAddresses.map((a) => a.trim()).filter(Boolean)));
+  if (min > Math.max(addrs.length, 1)) {
+    throw new Error(`min_approvals (${min}) cannot exceed approver count (${addrs.length})`);
+  }
+  const c = await db();
+  await c.execute({
+    sql: "INSERT INTO workspace_settings (id, min_approvals, approver_addresses, updated_at, updated_by) VALUES (1, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET min_approvals = excluded.min_approvals, approver_addresses = excluded.approver_addresses, updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+    args: [min, JSON.stringify(addrs), Date.now(), input.by],
+  });
+  return getWorkspaceSettings();
 }
 
 // ---- Line items -------------------------------------------------------------

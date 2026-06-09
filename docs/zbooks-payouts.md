@@ -158,13 +158,43 @@ A full viewing key sees both incoming and outgoing notes, so the treasury shows
 up in ZBooks as a fully-audited account (grants in, payouts out, running balance)
 with no spending key anywhere near the server.
 
+## M-of-N approval gate
+
+For DAOs that need more than one person to greenlight a payout, ZBooks ships a
+process-level approval gate. Set a threshold on `/settings/approvals` and pick
+the approver addresses (any team admin/treasurer). Each new draft run snapshots
+the threshold at creation and refuses to expose the ZIP 321 URI (and the QR,
+and the Pay button) until that many distinct SIWZ identities click Approve.
+
+What it does:
+
+- Each approval is a row signed with `HMAC-SHA256(NEXTAUTH_SECRET, run_id +
+  approver_address + payload_hash)`. The signature binds the row to a specific
+  run AND a specific payload, so the integrity check fails if an admin tries to
+  move an approval to a different run.
+- `payload_hash` is `SHA-256` over the canonical ordered list of payable items
+  (address, zatoshi, memo). Editing or adding any line item changes the hash,
+  which invalidates all older approvals and forces re-approval. Stale rows are
+  kept and shown in the panel for audit purposes; they don't count.
+- Optional `DISCORD_WEBHOOK_URL`. When set, ZBooks posts to Discord when a run
+  needs approvals, on each approval, and when the threshold clears.
+
+What it does NOT do:
+
+- It is not on-chain multisig. The treasurer still signs the final ZIP 321 in
+  their own wallet, alone. ZBooks gates the URL reveal, not the signature.
+- It is not FROST. The data model is shaped to absorb FROST once wallet PCZT +
+  FROST support matures (each approver's "approve" click becomes a signature
+  share on the same payload hash) but today this is process gating, not
+  cryptographic threshold.
+
 ## Limits
 
 What this does not do yet, so the home copy does not oversell it:
 
-- **Multisig and governance treasuries.** The batch is one URI signed by one
-  treasurer in one wallet. A DAO with a 2-of-3 / FROST treasury or an on-chain
-  approval step is not handled.
+- **On-chain multisig.** The approval gate above is application-layer. The
+  final transaction is still one signature from one treasurer. True 2-of-3 or
+  FROST on the spend path needs PCZT-capable wallets and is on the roadmap.
 - **Fiat valuation, cost basis, capital gains.** The P&L is ZEC-denominated.
   Tax-ready fiat books need per-tx valuation and gain/loss lots.
 - **Recurring automation.** A run is created by hand each cycle. No schedules,
@@ -176,12 +206,18 @@ What this does not do yet, so the home copy does not oversell it:
   [`/payouts/[id]`](../apps/demo/src/app/payouts/[id]/PayoutRunDetail.tsx) (run detail, batch QR, reconcile).
   Admin and treasurer only; viewers are redirected and the nav link is hidden, since payouts expose the
   payee address book and amounts.
-- Lib: [`payouts.ts`](../apps/demo/src/lib/payouts.ts) (URI build, ZIP 317 fee, pre-flight); reconciliation in [`db.ts`](../apps/demo/src/lib/db.ts).
-- API: `POST/GET /api/payees`, `/api/payouts`, `/api/payouts/[id]/items`, `/api/payouts/[id]/qr`, `/api/payouts/[id]/reconcile`.
+- Lib: [`payouts.ts`](../apps/demo/src/lib/payouts.ts) (URI build, ZIP 317 fee, pre-flight, approval state); reconciliation and approval HMAC helpers in [`db.ts`](../apps/demo/src/lib/db.ts).
+- API: `POST/GET /api/payees`, `/api/payouts`, `/api/payouts/[id]/items`, `/api/payouts/[id]/qr`, `/api/payouts/[id]/reconcile`, `/api/payouts/[id]/approve`, `/api/settings/approvals`.
 - Regression test: `node scripts/e2e-payouts.mjs` against a `SIWZ_DEMO=1` server.
 
 ## Roadmap
 
+- **PCZT + FROST.** Today the M-of-N gate is process-level. When wallet PCZT
+  support and FROST signing libraries are usable in production, each "Approve"
+  click in the ApprovalsPanel becomes a FROST share signature on the same
+  payload hash. The data model is already shaped for it (approvals are HMAC'd
+  to `(run, address, payload_hash)`); swap HMAC for FROST share and the UI
+  stays the same.
 - **PCZT one-click (option B).** Build the transaction in ZBooks from the viewing
   key, hand the unsigned PCZT to the treasurer's wallet (snap `signPczt`, or an
   in-browser wallet lib) to sign and broadcast. Removes the multi-recipient

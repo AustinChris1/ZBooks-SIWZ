@@ -1,7 +1,14 @@
 import { buildZip321Multi, isShieldedAddress, type ZIP321Request } from "@siwz/core";
 import { getShieldedExplorer, type UfvkBalance } from "./explorer";
-import { getKey, type RunWithItems } from "./db";
-import type { PayoutLineItem } from "./types";
+import {
+  getKey,
+  getWorkspaceSettings,
+  listRunApprovals,
+  runPayloadHash,
+  verifyApprovalSignature,
+  type RunWithItems,
+} from "./db";
+import type { PayoutLineItem, PayoutRunApproval } from "./types";
 
 // ZIP 317 marginal fee per logical action (https://zips.z.cash/zip-0317).
 export const ZIP317_MARGINAL_FEE_ZAT = 5000;
@@ -37,6 +44,16 @@ export function buildRunUri(
   return { uri, totalZec, count: items.length };
 }
 
+export interface ApprovalState {
+  required: number;
+  validCount: number;
+  approved: boolean;
+  payloadHash: string;
+  approvers: string[];
+  valid: PayoutRunApproval[];
+  stale: PayoutRunApproval[];
+}
+
 export interface RunPreflight {
   count: number;
   totalZec: number;
@@ -50,7 +67,31 @@ export interface RunPreflight {
    *  = no shielded explorer configured; "fetch-failed:..." = backend errored.
    *  undefined when balance is non-null. */
   balanceError?: string;
+  // URI is null until approvals.approved is true (when required > 1).
   uri: string | null;
+  approvals: ApprovalState;
+}
+
+export async function loadApprovalState(run: RunWithItems): Promise<ApprovalState> {
+  const settings = await getWorkspaceSettings();
+  const payloadHash = runPayloadHash(run);
+  const all = await listRunApprovals(run.id);
+  const valid: PayoutRunApproval[] = [];
+  const stale: PayoutRunApproval[] = [];
+  for (const a of all) {
+    if (a.payload_hash === payloadHash && verifyApprovalSignature(a)) valid.push(a);
+    else stale.push(a);
+  }
+  const required = Math.max(1, run.required_approvals);
+  return {
+    required,
+    validCount: valid.length,
+    approved: valid.length >= required,
+    payloadHash,
+    approvers: settings.approver_addresses,
+    valid,
+    stale,
+  };
 }
 
 export async function runPreflight(run: RunWithItems): Promise<RunPreflight> {
@@ -78,6 +119,8 @@ export async function runPreflight(run: RunWithItems): Promise<RunPreflight> {
   const spendableZec = balance ? Number(balance.spendableZatoshi) / 1e8 : null;
   const sufficient = spendableZec == null ? null : spendableZec + 1e-8 >= requiredZec;
 
+  const approvals = await loadApprovalState(run);
+
   return {
     count,
     totalZec,
@@ -87,7 +130,9 @@ export async function runPreflight(run: RunWithItems): Promise<RunPreflight> {
     spendableZec,
     sufficient,
     balanceError,
-    uri: built?.uri ?? null,
+    // URI withheld until M-of-N clears.
+    uri: approvals.approved ? built?.uri ?? null : null,
+    approvals,
   };
 }
 

@@ -33,6 +33,7 @@ export default async function PayoutRunPage({ params }: { params: { id: string }
       payees={payees}
       keys={keys}
       canEdit={canTag(user.role)}
+      currentUserAddress={user.address}
     />
   );
 }

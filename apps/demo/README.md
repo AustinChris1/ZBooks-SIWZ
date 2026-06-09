@@ -1,8 +1,8 @@
-# ZBooks — accounting for teams paid in ZEC
+# ZBooks: accounting and payouts for teams paid in ZEC
 
 > Hackathon submission: the "QuickBooks for ZEC teams" most DAOs and grant recipients have been pasting txids into spreadsheets to avoid building.
 
-Built on [Sign in with Zcash](../../README.md). Authentication is non-custodial — the app never sees a spending key, only signed messages.
+Built on [Sign in with Zcash](../../README.md). Authentication is non-custodial. The app never sees a spending key, only signed messages.
 
 ## What it does
 
@@ -13,6 +13,8 @@ Built on [Sign in with Zcash](../../README.md). Authentication is non-custodial 
 | `/transactions` | See every tx synced from your keys. Tag by category. Add notes. |
 | `/reports` | Monthly P&L. Top contractors. CSV export your accountant can drop into QuickBooks/Xero. |
 | `/team` | Role-based access (admin / treasurer / viewer). First sign-in is admin. |
+| `/payouts` | Build batch payout runs. Pre-flight balance, ZIP 321 multi-recipient URI, reconcile against the treasury UFVK. ZecBounties import. |
+| `/settings/approvals` | M-of-N approval gate. Set a threshold and an approver allowlist; new runs require that many SIWZ-authenticated approvals before the Pay button unlocks. Optional Discord webhook. |
 
 ## Status
 
@@ -21,6 +23,8 @@ Built on [Sign in with Zcash](../../README.md). Authentication is non-custodial 
 - UFVK paste + per-key transaction lists.
 - Tagging UI, monthly P&L, CSV export.
 - Multi-user team with three roles.
+- Non-custodial batch payouts via ZIP 321 with auto-reconciliation against the treasury UFVK.
+- Process-level M-of-N approval gate on payout runs. Per-run snapshot of the threshold, HMAC-bound to the exact payable item set, optional Discord pings.
 
 **Stubbed (clearly marked):**
 - Lightwalletd sync. Adding your first UFVK seeds a set of realistic-looking sample transactions so the rest of the flow is exercisable end-to-end. Replacing this stub with a real gRPC-web client to lightwalletd is a single function in [`src/lib/db.ts`](src/lib/db.ts).

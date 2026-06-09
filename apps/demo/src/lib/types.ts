@@ -109,6 +109,27 @@ export interface PayoutRun {
   status: PayoutRunStatus;
   sent_at?: number;
   note?: string;
+  // M-of-N gate. Snapshot at creation so later policy edits don't shift older runs.
+  required_approvals: number;
+}
+
+// Signature binds to (run, address, payload). payload_hash binds to the items.
+export interface PayoutRunApproval {
+  id: string;
+  run_id: string;
+  approver_address: string;
+  comment?: string;
+  payload_hash: string;
+  signature: string;
+  approved_at: number;
+}
+
+// Workspace-wide settings. Singleton row.
+export interface WorkspaceSettings {
+  min_approvals: number;
+  approver_addresses: string[];
+  updated_at?: number;
+  updated_by?: string;
 }
 
 // One contributor's line in a run. label/address are denormalised from the

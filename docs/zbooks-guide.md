@@ -24,6 +24,7 @@ payout run's source).
 | `/counterparties` (Contacts) | Name addresses | Saved address labels and unlabelled addresses by activity; a label renders everywhere | All see; admin/treasurer edit |
 | `/audit` | Tagging trail | Every categorisation action, newest first: when, who, counterparty, category, memo, amount | All roles (logs tagging only, not key or role changes) |
 | `/team` | Members and roles | Each member's identity, role, when added | All see; admin changes roles and adds/removes members |
+| `/settings/approvals` | M-of-N approval policy | Required approvals (M) and approver allowlist (N) for new payout runs | Admin only |
 
 ## Roles
 
@@ -33,7 +34,8 @@ payout run's source).
 | Tag transactions, edit contacts | no | yes | yes |
 | Add / remove / rename / sync viewing keys | no | yes | yes |
 | See and run payouts | no | yes | yes |
-| Manage team and roles | no | no | yes |
+| Approve a payout run | no | yes (if on allowlist) | yes (if on allowlist) |
+| Manage team, roles, approval policy | no | no | yes |
 
 First sign-in becomes admin on a fresh instance. With `SIWZ_ADMIN_ADDRESSES`
 set, only listed identities are admin and everyone else joins as viewer. Admins
@@ -64,10 +66,18 @@ it. Categorise transactions on `/transactions` (memos pre-fill as a first draft)
 Label recurring addresses on `/counterparties`. When it is payday, build a run on
 `/payouts`, pay the batch, and reconcile. Export the CSV from `/reports` at close.
 
+If your team set an approval threshold above 1, your draft run will sit with an
+"Approvals: 0 of N" banner until enough approvers click Approve on it; only then
+does the Pay batch button unlock. Editing any line item after approvals are
+collected invalidates the old approvals (they go stale and are kept for audit)
+and you'll need to collect approvals again at the new payload.
+
 ### Using ZBooks as an admin
-Everything a treasurer can do, plus the Team page: promote a new finance
-contractor to treasurer, demote, or remove. Set `SIWZ_ADMIN_ADDRESSES` at deploy
-time so a public demo does not hand admin to the first visitor.
+Everything a treasurer can do, plus the Team page (promote a new finance
+contractor to treasurer, demote, or remove) and Settings (approval policy: how
+many approvals each new payout run requires, and who is on the approver
+allowlist). Set `SIWZ_ADMIN_ADDRESSES` at deploy time so a public demo does not
+hand admin to the first visitor.
 
 ## Auditing a wallet for undocumented transactions
 

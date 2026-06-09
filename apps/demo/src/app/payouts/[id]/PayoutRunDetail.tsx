@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { PayoutLineItem } from "@/lib/types";
+import type { PayoutLineItem, PayoutRunApproval } from "@/lib/types";
 import { shortenMiddle } from "@/lib/format";
 import { useToast } from "@/components/Toast";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -16,7 +16,18 @@ interface RunData {
   note?: string;
   created_at: number;
   sent_at?: number;
+  required_approvals: number;
   items: PayoutLineItem[];
+}
+
+interface ApprovalsView {
+  required: number;
+  validCount: number;
+  approved: boolean;
+  payloadHash: string;
+  approvers: string[];
+  valid: PayoutRunApproval[];
+  stale: PayoutRunApproval[];
 }
 
 interface Preflight {
@@ -29,6 +40,7 @@ interface Preflight {
   uri: string | null;
   balance: { totalZatoshi: string; spendableZatoshi: string; unconfirmedZatoshi: string } | null;
   balanceError?: string;
+  approvals: ApprovalsView;
 }
 
 type IdLabel = { id: string; label: string; address?: string; primary?: boolean };
@@ -41,12 +53,14 @@ export function PayoutRunDetail({
   payees,
   keys,
   canEdit,
+  currentUserAddress,
 }: {
   run: RunData;
   preflight: Preflight;
   payees: IdLabel[];
   keys: IdLabel[];
   canEdit: boolean;
+  currentUserAddress: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -77,6 +91,14 @@ export function PayoutRunDetail({
         toast({ message: "Nothing to pay: no completed unpaid lines.", tone: "error" });
         return;
       }
+      if (!fresh.approvals.approved) {
+        const need = fresh.approvals.required - fresh.approvals.validCount;
+        toast({
+          message: `Awaiting ${need} more approval${need === 1 ? "" : "s"} before this batch can be paid.`,
+          tone: "error",
+        });
+        return;
+      }
       if (fresh.sufficient === false) {
         toast({
           message: `Treasury short of ${zec(fresh.requiredZec)} ZEC right now. Cannot pay.`,
@@ -91,6 +113,34 @@ export function PayoutRunDetail({
       setPayLoading(false);
     }
   };
+
+  const approve = (comment: string) =>
+    startTransition(async () => {
+      const res = await fetch(`/api/payouts/${run.id}/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(comment ? { comment } : {}),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({ message: j.error ?? "Could not record approval.", tone: "error" });
+        return;
+      }
+      toast({ message: "Approval recorded.", tone: "success" });
+      refresh();
+    });
+
+  const revokeApproval = () =>
+    startTransition(async () => {
+      const res = await fetch(`/api/payouts/${run.id}/approve`, { method: "DELETE" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast({ message: j.error ?? "Could not revoke approval.", tone: "error" });
+        return;
+      }
+      toast({ message: "Approval withdrawn.", tone: "success" });
+      refresh();
+    });
 
   const reconcile = () =>
     act(async () => {
@@ -154,6 +204,16 @@ export function PayoutRunDetail({
         onPay={openPay}
         onReconcile={reconcile}
       />
+
+      {run.status === "draft" && run.required_approvals > 1 && (
+        <ApprovalsPanel
+          approvals={preflight.approvals}
+          currentUserAddress={currentUserAddress}
+          disabled={isPending}
+          onApprove={approve}
+          onRevoke={revokeApproval}
+        />
+      )}
 
       <p className="text-xs text-neutral-500 leading-relaxed -mt-2">
         {sourceKey ? (
@@ -299,7 +359,12 @@ function PreflightBanner({
             </button>
             <button
               onClick={onPay}
-              disabled={disabled || count === 0 || sufficient === false}
+              disabled={disabled || count === 0 || sufficient === false || !preflight.approvals.approved}
+              title={
+                !preflight.approvals.approved
+                  ? `Awaiting ${preflight.approvals.required - preflight.approvals.validCount} more approval(s)`
+                  : undefined
+              }
               className="text-sm rounded-md bg-zcash-yellow text-zcash-dark font-semibold px-3.5 py-1.5 hover:bg-yellow-400 transition-colors disabled:opacity-50"
             >
               Pay batch ({count})
@@ -308,6 +373,135 @@ function PreflightBanner({
         )}
       </div>
     </div>
+  );
+}
+
+function ApprovalsPanel({
+  approvals,
+  currentUserAddress,
+  disabled,
+  onApprove,
+  onRevoke,
+}: {
+  approvals: ApprovalsView;
+  currentUserAddress: string;
+  disabled: boolean;
+  onApprove: (comment: string) => void;
+  onRevoke: () => void;
+}) {
+  const [comment, setComment] = useState("");
+  const allowlistOn = approvals.approvers.length > 0;
+  const eligible = !allowlistOn || approvals.approvers.includes(currentUserAddress);
+  const mine = approvals.valid.find((a) => a.approver_address === currentUserAddress);
+  const pct = Math.min(100, Math.round((approvals.validCount / Math.max(1, approvals.required)) * 100));
+
+  return (
+    <section className={`rounded-xl border p-5 flex flex-col gap-4 ${
+      approvals.approved
+        ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/10"
+        : "border-amber-300 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/10"
+    }`}>
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">
+            Approvals{" "}
+            <span className="font-normal text-neutral-500">
+              · {approvals.validCount} of {approvals.required}
+            </span>
+          </h2>
+          <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+            Multi-party approval. Editing any line item resets the count.
+            {approvals.stale.length > 0 && (
+              <>
+                {" "}
+                <span className="text-amber-700 dark:text-amber-400">
+                  {approvals.stale.length} stale approval{approvals.stale.length === 1 ? "" : "s"} from before the last edit.
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        {approvals.approved ? (
+          <span className="text-xs uppercase tracking-wide rounded px-2 py-0.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+            cleared
+          </span>
+        ) : (
+          <span className="text-xs uppercase tracking-wide rounded px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+            pending
+          </span>
+        )}
+      </div>
+
+      <div className="h-1.5 rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
+        <div
+          className={`h-full ${approvals.approved ? "bg-emerald-500" : "bg-amber-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {approvals.valid.length > 0 && (
+        <ul className="flex flex-col gap-2 text-sm">
+          {approvals.valid.map((a) => (
+            <li key={a.id} className="flex items-start gap-2">
+              <span className="mt-0.5 text-emerald-600 dark:text-emerald-400">✓</span>
+              <div className="flex-1 min-w-0">
+                <code className="font-mono text-xs">{shortenMiddle(a.approver_address)}</code>
+                <span className="text-xs text-neutral-500 ml-2">
+                  {new Date(a.approved_at).toLocaleString()}
+                </span>
+                {a.comment && (
+                  <div className="text-xs text-neutral-600 dark:text-neutral-300 mt-0.5">
+                    &ldquo;{a.comment}&rdquo;
+                  </div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!eligible ? (
+        <p className="text-xs text-neutral-500">
+          You are not on the approver allowlist. Ask an admin to add your address on{" "}
+          <Link href="/settings/approvals" className="underline">Settings → Approvals</Link>.
+        </p>
+      ) : mine ? (
+        <div className="flex items-center justify-between gap-3 pt-1 border-t border-neutral-200 dark:border-neutral-800">
+          <span className="text-xs text-neutral-500">You approved this batch.</span>
+          <button
+            onClick={onRevoke}
+            disabled={disabled}
+            className="text-xs rounded-md border border-neutral-300 dark:border-neutral-700 px-2.5 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50"
+          >
+            Withdraw approval
+          </button>
+        </div>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onApprove(comment.trim());
+            setComment("");
+          }}
+          className="flex flex-col gap-2 pt-1 border-t border-neutral-200 dark:border-neutral-800"
+        >
+          <input
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Optional comment (e.g. amounts cross-checked against Dework)"
+            maxLength={500}
+            className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zcash-yellow/40"
+          />
+          <button
+            type="submit"
+            disabled={disabled}
+            className="self-end text-sm rounded-md bg-zcash-yellow text-zcash-dark font-semibold px-3.5 py-1.5 hover:bg-yellow-400 transition-colors disabled:opacity-50"
+          >
+            Approve this batch
+          </button>
+        </form>
+      )}
+    </section>
   );
 }
 

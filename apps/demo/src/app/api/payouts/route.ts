@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createRun, listRuns } from "@/lib/db";
+import { createRun, getWorkspaceSettings, listRuns } from "@/lib/db";
+import { notifyRunNeedsApproval } from "@/lib/discord";
 import { requireRole } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
-  return NextResponse.json({ runs: listRuns() });
+  return NextResponse.json({ runs: await listRuns() });
 }
 
 export async function POST(req: Request) {
@@ -26,6 +27,17 @@ export async function POST(req: Request) {
   if (!title) return NextResponse.json({ error: "title required" }, { status: 400 });
   if (title.length > 120) return NextResponse.json({ error: "title too long" }, { status: 400 });
 
-  const run = createRun({ title, sourceUfvkId, note, by: auth.address });
+  const run = await createRun({ title, sourceUfvkId, note, by: auth.address });
+  if (run.required_approvals > 1) {
+    const settings = await getWorkspaceSettings();
+    const origin = req.headers.get("origin") ?? undefined;
+    notifyRunNeedsApproval({
+      runId: run.id,
+      title: run.title,
+      required: run.required_approvals,
+      approverCount: settings.approver_addresses.length,
+      origin,
+    }).catch(() => {});
+  }
   return NextResponse.json({ run });
 }

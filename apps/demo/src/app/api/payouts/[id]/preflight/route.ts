@@ -33,5 +33,11 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
           unconfirmedZatoshi: preflight.balance.unconfirmedZatoshi,
         }
       : null,
+    approvals: {
+      required: preflight.approvals.required,
+      validCount: preflight.approvals.validCount,
+      approved: preflight.approvals.approved,
+      approvers: preflight.approvals.approvers,
+    },
   });
 }

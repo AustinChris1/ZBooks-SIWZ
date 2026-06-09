@@ -13,6 +13,7 @@ const LINKS: { href: string; label: string; payoutsOnly?: boolean }[] = [
   { href: "/counterparties", label: "Contacts" },
   { href: "/audit", label: "Audit" },
   { href: "/team", label: "Team" },
+  { href: "/settings/approvals", label: "Settings" },
 ];
 
 export function SiteHeader({
