@@ -22,6 +22,23 @@ Where this is going after the hackathon.
 - **Wallet-side "this is a sign-in" indicator.** When a `zcash:` URI carries a recognized SIWZ memo prefix (`SIWZ:…`), wallets should label the confirm screen differently ("Sign in to {dApp}") so users know they're authenticating, not paying for a thing.
 - **ZBooks PCZT one-click payouts.** Today a payout run is a multi-recipient ZIP 321 URI the treasurer scans in a multi-recipient wallet (YWallet/Zingo). When the ChainSafe snap's `signPczt` (or a published in-browser wallet lib) is usable, ZBooks builds the transaction itself from the viewing key and the treasurer just approves, removing the per-recipient wallet-support caveat. Still non-custodial: ZBooks never holds the spending key.
 
+## Backend-agnostic adapters
+
+Not version-numbered because these don't gate on a Zcash protocol upgrade.
+They ship when they ship.
+
+- **Standalone JWT export.** `POST /api/auth/siwz/jwt` returns a signed JWT
+  after memo-challenge or signmessage verification. Lets any backend in any
+  language (Express, FastAPI, Phoenix, raw Lambda) consume SIWZ as auth
+  without depending on NextAuth.
+- **One-shot consumed-nonce registry.** An explicit `consumed_nonces` table
+  with TTL so SIWZ stands alone as a replay-proof auth layer outside of
+  NextAuth's per-session signIn guarantee. Ships alongside the JWT export.
+- **Linked accounts.** A `siwz_linked_accounts` table and an OAuth bridge
+  flow: user signs in with Zcash, then optionally links an email or GitHub
+  account for recovery, notifications, or display. The Zcash address stays
+  the canonical user record; the email/GitHub becomes an additional handle.
+
 ## v0.3: ZIP 304 signed messages
 
 - **Wire up shielded signmessage** behind the existing `verifySaplingSignature` plug-in point in `@siwz/core`.
@@ -64,3 +81,20 @@ If you're a Zcash ecosystem org (ECC, ZF, Zechub, ZCG):
 
 - **Subsidize the hosted multi-tenant verifier** in v0.5. Cost is trivial; impact on adoption is huge.
 - **Reference SIWZ in your developer onboarding** the way Ethereum docs reference SIWE. The biggest lift to SIWE's adoption wasn't the code; it was being the obvious default.
+
+## Non-goals
+
+Things SIWZ deliberately does not try to solve, with the reason:
+
+- **On-chain mass user provisioning.** Per-sign-in cost is dust paid by the
+  user, not the dApp, so the enterprise feasibility argument doesn't apply.
+  SIWZ does not pre-mint identities on chain.
+- **Side-chain or fork for identity.** Mainnet already provides the primitive
+  (a publicly readable payment proves spend authority over the spent funds).
+  No additional chain needed.
+- **Voting and governance tokens.** SIWZ proves identity. Voting is a
+  separate layer (Snapshot, on-chain governance contracts, dedicated
+  governance chains). Compose, don't conflate.
+- **Transferable identity tokens.** Different design space. If you want this,
+  build a separate protocol on top of ZSAs when they ship. SIWZ stays focused
+  on "this address proved itself."

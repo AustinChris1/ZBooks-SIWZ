@@ -2,10 +2,17 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { listKeys, listPayees, listRuns } from "@/lib/db";
 import { canSeePayouts, canTag, currentUser } from "@/lib/session";
+import { Pagination, parsePageParam } from "@/components/Pagination";
 import { NewRunForm } from "./NewRunForm";
 import { PayeesManager } from "./PayeesManager";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 15;
+
+interface SearchParams {
+  page?: string | string[];
+}
 
 const STATUS_STYLE: Record<string, string> = {
   draft: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300",
@@ -14,7 +21,11 @@ const STATUS_STYLE: Record<string, string> = {
   void: "bg-neutral-100 text-neutral-400 line-through dark:bg-neutral-800",
 };
 
-export default async function PayoutsPage() {
+export default async function PayoutsPage({
+  searchParams,
+}: {
+  searchParams?: SearchParams;
+}) {
   const user = await currentUser();
   if (!user) redirect("/");
   if (!canSeePayouts(user.role)) redirect("/transactions");
@@ -23,6 +34,11 @@ export default async function PayoutsPage() {
   const payees = await listPayees();
   const keys = (await listKeys()).map((k) => ({ id: k.id, label: k.label, primary: k.primary }));
   const canEdit = canTag(user.role);
+
+  const page = parsePageParam(searchParams?.page);
+  const totalRuns = runs.length;
+  const offset = (page - 1) * PAGE_SIZE;
+  const pagedRuns = runs.slice(offset, offset + PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-8">
@@ -54,15 +70,15 @@ export default async function PayoutsPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold tracking-tight">
-          Runs <span className="text-neutral-500 font-normal">({runs.length})</span>
+          Runs <span className="text-neutral-500 font-normal">({totalRuns})</span>
         </h2>
-        {runs.length === 0 ? (
+        {totalRuns === 0 ? (
           <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 p-6 text-center text-sm text-neutral-500">
             No payout runs yet. {canEdit ? "Create one above." : "Ask a treasurer to create one."}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
-            {runs.map((r) => {
+            {pagedRuns.map((r) => {
               const completed = r.items.filter((i) => i.work_status === "completed");
               const paid = r.items.filter((i) => i.pay_status === "paid");
               const totalToPay = completed
@@ -96,6 +112,15 @@ export default async function PayoutsPage() {
               );
             })}
           </ul>
+        )}
+        {totalRuns > 0 && (
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={totalRuns}
+            basePath="/payouts"
+            label="runs"
+          />
         )}
       </section>
 

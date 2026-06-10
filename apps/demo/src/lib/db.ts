@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createClient, type Client, type Row } from "@libsql/client/web";
+import { isShieldedAddress } from "@siwz/core";
 import { decryptUfvk, encryptUfvk, isEncrypted } from "./crypto-at-rest";
 import {
   CATEGORY_LABEL,
@@ -1093,18 +1094,25 @@ export async function reconcileRun(runId: string): Promise<{ matched: number; it
   const itemsRs = await c.execute({ sql: "SELECT * FROM payout_items WHERE run_id = ?", args: [runId] });
   const items = itemsRs.rows.map(toItem);
 
+  // Shielded-with-memo lines match on (memo, amount): UA receivers vary on-chain
+  // so address equality is unreliable. Everything else falls back to (address, amount).
+  const useMemoMatch = (i: { address: string; memo?: string }) =>
+    !!i.memo && isShieldedAddress(i.address);
+  const lineKey = (i: { address: string; amount_zec: number; memo?: string }) => {
+    const zat = Math.round(i.amount_zec * 1e8);
+    return useMemoMatch(i) ? `memo:${i.memo}:${zat}` : `addr:${i.address}:${zat}`;
+  };
+
   const usedTxKeys = new Set(
-    items.filter((i) => i.txid).map((i) => `${i.txid}:${i.address}:${i.memo ?? ""}`),
+    items.filter((i) => i.txid).map((i) => `${i.txid}:${lineKey(i)}`),
   );
 
-  // Count how often each (address, amount, memo) tuple appears among the
-  // completed-unpaid lines. If a tuple repeats, auto-match could pair the
-  // wrong tx with the wrong line, so we refuse it and require manual
-  // mark-paid for those rows.
+  // Refuse ambiguous duplicates: two lines with identical match-key would
+  // race for the same tx, so require manual settlement.
   const tupleCount = new Map<string, number>();
   for (const i of items) {
     if (i.pay_status === "paid" || i.work_status !== "completed") continue;
-    const k = `${i.address}:${Math.round(i.amount_zec * 1e8)}:${i.memo ?? ""}`;
+    const k = lineKey(i);
     tupleCount.set(k, (tupleCount.get(k) ?? 0) + 1);
   }
 
@@ -1116,15 +1124,18 @@ export async function reconcileRun(runId: string): Promise<{ matched: number; it
     if (item.pay_status === "paid") continue;
     if (item.work_status !== "completed") continue;
     const itemZat = Math.round(item.amount_zec * 1e8);
-    const tupleKey = `${item.address}:${itemZat}:${item.memo ?? ""}`;
-    if ((tupleCount.get(tupleKey) ?? 0) > 1) continue; // ambiguous; manual settlement required
+    const key = lineKey(item);
+    if ((tupleCount.get(key) ?? 0) > 1) continue;
+    const memoMatch = useMemoMatch(item);
     const hit = outTxs.find((t) => {
-      if (!t.counterparty || t.counterparty !== item.address) return false;
       if (Math.round(Math.abs(t.amount_zec) * 1e8) !== itemZat) return false;
-      // Strict memo equality: the old `includes` substring let a longer memo
-      // accidentally match a shorter line memo.
-      if (item.memo && t.memo !== item.memo) return false;
-      return !usedTxKeys.has(`${t.txid}:${item.address}:${t.memo ?? ""}`);
+      if (memoMatch) {
+        if (t.memo !== item.memo) return false;
+      } else {
+        if (!t.counterparty || t.counterparty !== item.address) return false;
+        if (item.memo && t.memo !== item.memo) return false;
+      }
+      return !usedTxKeys.has(`${t.txid}:${key}`);
     });
     if (!hit) continue;
 
@@ -1133,7 +1144,7 @@ export async function reconcileRun(runId: string): Promise<{ matched: number; it
     item.paid_at = Date.now();
     item.paid_block = hit.block_height;
     item.reconciled = true;
-    usedTxKeys.add(`${hit.txid}:${item.address}:${hit.memo ?? ""}`);
+    usedTxKeys.add(`${hit.txid}:${key}`);
     matched++;
     touched.push(item);
 

@@ -228,3 +228,152 @@ The ChainSafe WebZjs Zcash Snap exposes a seed fingerprint and a unified viewing
 Read the session anywhere on the server with `getServerSession(authOptions)`; the signed-in Zcash address (or memo / snap identity) is on `session.user.address` once you've augmented next-auth's `User` interface (see [quickstart.md §5](./quickstart.md#5-typing-the-session)).
 
 For the matching sign-out flow, drop in `<SignOut onSignOut={() => signOut({ callbackUrl: "/" })} />` from `@siwz/react`. Three variants (`primary` / `secondary` / `link`), optional inline confirm prompt, busy state during the sign-out call.
+
+---
+
+## Using SIWZ outside Next.js (Express, Laravel, FastAPI, anything)
+
+If your backend isn't Next.js, you don't need NextAuth at all. SIWZ can mint a
+standard HS256 JWT after a successful sign-in. Any backend in any language that
+can verify a JWT can then consume SIWZ as auth.
+
+### Pattern: small Node verifier in front of any backend
+
+Run a tiny Node endpoint that handles the memo-challenge flow and emits a JWT.
+Your Laravel / Rails / FastAPI / Phoenix backend verifies that JWT and issues
+its own session. The Node endpoint can be a Vercel function, a Cloudflare
+Worker, or any Node host. The user's spending key never leaves their wallet.
+
+The issue route is unchanged. The verify route turns on the `jwt` option so
+the response includes a signed token alongside the NextAuth envelope:
+
+```ts
+// /api/auth/memo/verify
+import { pollMemoHandler } from "@siwz/next-auth/memo";
+
+export const POST = pollMemoHandler({
+  secret: process.env.SIWZ_SECRET!,
+  jwt: {
+    secret: process.env.JWT_SHARED_SECRET!,
+    issuer: "siwz-auth.example.com",
+    audience: "laravel-app.example.com",
+    ttlSeconds: 3600,
+    network: "mainnet",
+  },
+});
+```
+
+Successful response:
+
+```json
+{
+  "ok": true,
+  "mode": "transparent-amount",
+  "identity": "t1abc...xyz",
+  "envelope": "...",
+  "jwt": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "txid": "..."
+}
+```
+
+The `envelope` is for NextAuth consumers (ignore it on non-Next backends).
+The `jwt` is for everyone else.
+
+### Laravel side
+
+Install a JWT verifier (`firebase/php-jwt` is the standard pick):
+
+```bash
+composer require firebase/php-jwt
+```
+
+Then in a middleware:
+
+```php
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+
+$token = $request->bearerToken();
+$claims = JWT::decode($token, new Key(env('JWT_SHARED_SECRET'), 'HS256'));
+
+// $claims->sub is the Zcash address.
+// $claims->iss must match your SIWZ verifier.
+// $claims->aud must include your Laravel app's audience.
+```
+
+### Express side (Node, no NextAuth)
+
+```ts
+import express from "express";
+import { verifySiwzJwt } from "@siwz/next-auth";
+
+const app = express();
+
+app.use(async (req, res, next) => {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/, "");
+  if (!token) return res.status(401).json({ error: "missing token" });
+  try {
+    const claims = await verifySiwzJwt(token, {
+      secret: process.env.JWT_SHARED_SECRET!,
+      issuer: "siwz-auth.example.com",
+      audience: "express-app.example.com",
+    });
+    (req as any).user = { address: claims.sub };
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: (err as Error).message });
+  }
+});
+```
+
+### FastAPI side (Python)
+
+Same shape with `python-jose`:
+
+```python
+from fastapi import Depends, HTTPException, Header
+from jose import jwt, JWTError
+import os
+
+JWT_SECRET = os.environ["JWT_SHARED_SECRET"]
+
+def current_user(authorization: str = Header(...)):
+    try:
+        token = authorization.removeprefix("Bearer ").strip()
+        claims = jwt.decode(
+            token, JWT_SECRET, algorithms=["HS256"],
+            audience="fastapi-app.example.com",
+            issuer="siwz-auth.example.com",
+        )
+        return {"address": claims["sub"]}
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+```
+
+### What the JWT contains
+
+Default claims:
+
+- `sub`: the Zcash address that signed in. The canonical user id.
+- `iat`, `exp`: issued-at and expiry (epoch seconds).
+- `jti`: a random token id (useful if you maintain a revocation list).
+
+Settable via `JwtIssueConfig`:
+
+- `iss`: issuer string. Defends against cross-environment token reuse.
+- `aud`: audience claim. One backend or an array of trusted backends.
+- `flow`: which SIWZ flow signed in (`"memo"`, `"signmessage"`, `"snap"`).
+- `network`: `"mainnet"`, `"testnet"`, or `"regtest"`.
+- Anything else via `extraClaims(identity)`.
+
+### Security notes
+
+- `JWT_SHARED_SECRET` must be at least 16 chars. Generate with
+  `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+- HS256 means the verifier and the consumer share the same secret. If you
+  need one-way trust (verifier mints, backend can only verify), an RS256
+  variant is on the roadmap.
+- The JWT expires on its own via `exp`. For tighter revocation, track `jti`
+  against a per-app blocklist on logout.
+- Don't reuse `NEXTAUTH_SECRET` as `JWT_SHARED_SECRET`. Different trust
+  boundaries, different secrets.

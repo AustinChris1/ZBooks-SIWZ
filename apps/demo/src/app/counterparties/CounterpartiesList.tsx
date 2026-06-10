@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Counterparty } from "@/lib/types";
 import { useConfirm } from "@/components/ConfirmDialog";
+import { Pagination } from "@/components/Pagination";
 
 interface Stats {
   count: number;
@@ -20,11 +21,21 @@ export function CounterpartiesList({
   saved,
   unlabelled,
   canEdit,
+  unlabelledPage,
+  unlabelledPageSize,
 }: {
   saved: SavedRow[];
   unlabelled: UnlabelledRow[];
   canEdit: boolean;
+  unlabelledPage: number;
+  unlabelledPageSize: number;
 }) {
+  const unlabelledTotal = unlabelled.length;
+  const unlabelledSlice = unlabelled.slice(
+    (unlabelledPage - 1) * unlabelledPageSize,
+    unlabelledPage * unlabelledPageSize,
+  );
+
   return (
     <div className="flex flex-col gap-8">
       <section className="flex flex-col gap-3">
@@ -50,18 +61,27 @@ export function CounterpartiesList({
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold tracking-tight">
           Unlabelled, by activity{" "}
-          <span className="text-neutral-500 font-normal">({unlabelled.length})</span>
+          <span className="text-neutral-500 font-normal">({unlabelledTotal})</span>
         </h2>
-        {unlabelled.length === 0 ? (
+        {unlabelledTotal === 0 ? (
           <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 p-6 text-center text-sm text-neutral-500">
             Every counterparty in your transactions has a label. Nice.
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
-            {unlabelled.slice(0, 50).map((u) => (
+            {unlabelledSlice.map((u) => (
               <UnlabelledItem key={u.address} u={u} canEdit={canEdit} />
             ))}
           </ul>
+        )}
+        {unlabelledTotal > 0 && (
+          <Pagination
+            page={unlabelledPage}
+            pageSize={unlabelledPageSize}
+            total={unlabelledTotal}
+            basePath="/counterparties"
+            label="unlabelled addresses"
+          />
         )}
       </section>
     </div>
