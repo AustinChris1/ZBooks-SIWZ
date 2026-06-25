@@ -178,7 +178,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>
-          <p className="matrix-note">Wallet support data based on the full matrix in <code>docs/wallets.md</code>. Memo-challenge coverage is universal; the long tail of shielded wallets is rolled up into one row.</p>
+          <p className="matrix-note">Wallet support data based on the full matrix in <code>docs/siwz/wallets.md</code>. Memo-challenge coverage is universal; the long tail of shielded wallets is rolled up into one row.</p>
         </div>
       </section>
 

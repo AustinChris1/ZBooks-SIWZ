@@ -89,14 +89,14 @@ export async function POST(req: Request) {
           "Service address is shielded (sapling/unified) but no shielded-capable explorer is configured. " +
           "Set ZCASH_RPC_URL (+ ZCASH_RPC_USER/PASS) for your daemon's HTTP RPC, " +
           "or set ZCASH_CLI_PATH to your zcash-cli binary. " +
-          "See docs/memo-challenge.md for the full setup.",
+          "See docs/siwz/memo-challenge.md for the full setup.",
       }, { status: 500 });
     }
     if (!shieldedExplorer.getRecentMemosToAddress) {
       return NextResponse.json({
         error:
           "The configured explorer doesn't implement getRecentMemosToAddress. " +
-          "This indicates a misconfiguration — see docs/memo-challenge.md.",
+          "This indicates a misconfiguration — see docs/siwz/memo-challenge.md.",
       }, { status: 500 });
     }
   } else {

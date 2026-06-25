@@ -58,15 +58,15 @@ Memo-challenge isn't free of trade-offs:
 
 - **Latency.** The payment usually lands in 5 to 15 seconds in practice. A Zcash block targets 75 seconds, but in testing the sign-in completes well before that. Compared to MetaMask's instantaneous sign it is a small wait, mitigated by auto-polling and a clear waiting state. This is the price of authenticating on-chain rather than off-chain, and it is smaller than people assume.
 - **Cost to the user.** ~$0.01 per sign-in is real, even if tiny. Users with no Zcash at all can't sign in. SIWZ accepts this: Zcash sign-in for users who don't hold Zcash makes no sense anyway.
-- **Service-address visibility.** Transparent service addresses appear on the public chain. Shielded service addresses fix this but require the verifier to hold an IVK and consume light-wallet data (still much lighter than a full node; see `docs/winning-deployment.md`). SIWZ supports both with the same dispatcher.
+- **Service-address visibility.** Transparent service addresses appear on the public chain. Shielded service addresses fix this but require the verifier to hold an IVK and consume light-wallet data (still much lighter than a full node; see `./shielded-deployment.md`). SIWZ supports both with the same dispatcher.
 
 ## What SIWZ ships
 
 Three npm packages built around the design above:
 
-- `@siwz/core`: the protocol. SIWE-compatible classic message format *and* memo-challenge, ZIP 321 builder/parser, address parsing for `t1…` / `zs…` / `u1…`, pure-JS verification. 59 tests.
+- `@siwz/core`: the protocol. SIWE-compatible classic message format *and* memo-challenge, ZIP 321 builder/parser, address parsing for `t1…` / `zs…` / `u1…`, pure-JS verification, framework-agnostic JWT issue/verify so any backend can consume SIWZ identity. 76 tests.
 - `@siwz/react`: `<SignInWithZcash />`, `<MemoSignIn />`, and a `useSiwz()` hook. Drop-in, headless, themeable.
-- `@siwz/next-auth`: a NextAuth credentials provider that does the verification server-side. Plus stateless HMAC-signed nonce tokens so the whole flow works on serverless platforms with zero infra.
+- `@siwz/next-auth`: a NextAuth credentials provider that does the verification server-side. Plus stateless HMAC-signed nonce tokens and an optional JWT export so non-Next.js backends (Laravel, FastAPI, Express, anything) can verify the issued token in their own language. Zero infra on serverless platforms.
 
 Two reference apps built on top:
 
@@ -77,7 +77,7 @@ A clear migration path to even more Zcash-native primitives as they land:
 
 - **Shielded service addresses**: implemented; just needs a light-wallet RPC reachable from the verifier.
 - **ZIP 304 message signing**: pluggable verifier hook ready; will light up when wallets converge on a standard.
-- **ZSAs as identity tokens**: `docs/roadmap.md` sketches "team membership as a non-transferable ZSA" for ZBooks v2.
+- **ZSAs as identity tokens**: `./roadmap.md` sketches "team membership as a non-transferable ZSA" for ZBooks v2.
 
 ## What we want from the ecosystem
 

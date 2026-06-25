@@ -90,7 +90,7 @@ feel testing repeated sends.
 A batch is a single transaction with many outputs. It selects inputs once, pays
 everyone, and produces one change note, so there is one confirmation wait. For a
 weekly payout run you pay once and move on. ZBooks encodes the whole run as one
-multi-recipient ZIP 321 URI ([`buildZip321Multi`](../packages/siwz-core/src/zip321.ts)):
+multi-recipient ZIP 321 URI ([`buildZip321Multi`](../../packages/siwz-core/src/zip321.ts)):
 
 ```
 zcash:?address=<a0>&amount=<v0>&memo=<m0>&address.1=<a1>&amount.1=<v1>&...
@@ -143,7 +143,7 @@ wallet's batch support.
    mis-crediting; the treasurer marks those manually. Memo comparison is strict
    equality, not substring, so a longer wallet-memo never accidentally satisfies
    a shorter line memo. See `reconcileRun` in
-   [`db.ts`](../apps/demo/src/lib/db.ts) and
+   [`db.ts`](../../apps/demo/src/lib/db.ts) and
    [security.md](./security.md#reconcile-match-strictness).
 7. **Accounting**: a reconciled payout auto-tags as a `contractor` expense and
    labels the counterparty from the payee, so the run posts straight into the P&L.
@@ -153,7 +153,7 @@ Documented, initiated, paid, reconciled, in one tool.
 ## Treasury balance
 
 Reconciliation and pre-flight both need the treasury's balance. The
-[`lightwallet-rpc` wrapper](../apps/lightwallet-rpc/src/server.mjs) exposes
+[`lightwallet-rpc` wrapper](../../apps/lightwallet-rpc/src/server.mjs) exposes
 `POST /balance` (alongside `/memos` and `/transactions`); it shells out to
 `zingo-cli balance` and returns total plus spendable (spendable excludes
 unconfirmed change, per the [ZIP 315](https://zips.z.cash/zip-0315) UX
@@ -208,11 +208,11 @@ What this does not do yet, so the home copy does not oversell it:
 
 ## Surface area
 
-- UI: [`/payouts`](../apps/demo/src/app/payouts/page.tsx) (runs and payees) and
-  [`/payouts/[id]`](../apps/demo/src/app/payouts/[id]/PayoutRunDetail.tsx) (run detail, batch QR, reconcile).
+- UI: [`/payouts`](../../apps/demo/src/app/payouts/page.tsx) (runs and payees) and
+  [`/payouts/[id]`](../../apps/demo/src/app/payouts/[id]/PayoutRunDetail.tsx) (run detail, batch QR, reconcile).
   Admin and treasurer only; viewers are redirected and the nav link is hidden, since payouts expose the
   payee address book and amounts.
-- Lib: [`payouts.ts`](../apps/demo/src/lib/payouts.ts) (URI build, ZIP 317 fee, pre-flight, approval state); reconciliation and approval HMAC helpers in [`db.ts`](../apps/demo/src/lib/db.ts).
+- Lib: [`payouts.ts`](../../apps/demo/src/lib/payouts.ts) (URI build, ZIP 317 fee, pre-flight, approval state); reconciliation and approval HMAC helpers in [`db.ts`](../../apps/demo/src/lib/db.ts).
 - API: `POST/GET /api/payees`, `/api/payouts`, `/api/payouts/[id]/items`, `/api/payouts/[id]/qr`, `/api/payouts/[id]/reconcile`, `/api/payouts/[id]/approve`, `/api/settings/approvals`.
 - Regression test: `node scripts/e2e-payouts.mjs` against a `SIWZ_DEMO=1` server.
 

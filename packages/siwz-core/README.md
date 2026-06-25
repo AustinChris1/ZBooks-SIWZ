@@ -113,6 +113,30 @@ const result = await verifyMessage(wire, signatureBase64, {
 if (result.valid) signTheUserIn(result.address);
 ```
 
+## JWT export (any backend, no NextAuth)
+
+After a successful sign-in, mint a standard HS256 JWT that any backend in any language can verify. Useful when your server isn't Next.js or you want to hand identity off to a separate service (Laravel, FastAPI, Express, Phoenix, raw Lambda, anywhere that verifies JWTs).
+
+```ts
+import { issueSiwzJwt, verifySiwzJwt } from "@siwz/core";
+
+// Issue (on the SIWZ verifier server, after memo/signmessage success):
+const token = await issueSiwzJwt(
+  { sub: "t1abc...", flow: "memo", network: "mainnet" },
+  { secret: process.env.JWT_SHARED_SECRET!, ttlSeconds: 3600 },
+);
+
+// Verify (on the consumer backend):
+const claims = await verifySiwzJwt(token, {
+  secret: process.env.JWT_SHARED_SECRET!,
+  audience: "my-app.example.com",
+  issuer: "siwz-auth.example.com",
+});
+// claims.sub is the Zcash address
+```
+
+Works in Node, browsers, Bun, Deno, Cloudflare Workers, Vercel Edge. Standard HS256, so consumers can verify with any JWT library in their language (`firebase/php-jwt`, `python-jose`, `jsonwebtoken`, etc.). Claims include `sub`, `iat`, `exp`, `jti`, plus optional `iss`, `aud`, `flow`, `network`.
+
 ## Wire format (vs EIP-4361)
 
 Two intentional differences from SIWE:
@@ -174,6 +198,10 @@ base58checkEncode, base58checkDecode
 // Reference data
 ZCASH_BLOCKS, type ZcashBlockName
 
+// JWT export (framework-agnostic; any backend can verify the issued token)
+issueSiwzJwt, verifySiwzJwt
+type SiwzJwtClaims, IssueSiwzJwtOpts, VerifySiwzJwtOpts
+
 // Errors
 SiwzError, type SiwzErrorCode
 
@@ -193,7 +221,7 @@ type BlockchairExplorerOptions, ThreeXplExplorerOptions
 pnpm --filter @siwz/core test
 ```
 
-59 tests covering message build/parse, address decoding (t1/tm/t3/checksum), transparent signature verify (compressed/uncompressed, mismatched messages, addresses, expired messages, domain/nonce mismatches), ZIP 321 URI build/parse, and memo-challenge round-trips for both transparent and shielded modes.
+76 tests covering message build/parse, address decoding (t1/tm/t3/checksum), transparent signature verify (compressed/uncompressed, mismatched messages, addresses, expired messages, domain/nonce mismatches), ZIP 321 URI build/parse, memo-challenge round-trips for both transparent and shielded modes, and JWT issue/verify (expiry, audience, issuer, tamper-detection, clock skew).
 
 ## Related packages
 

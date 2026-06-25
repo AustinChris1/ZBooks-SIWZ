@@ -75,7 +75,7 @@ export async function fetchAllBounties(): Promise<ZecBounty[]> {
 }
 
 /** IN_PROGRESS + IN_REVIEW bounties are scheduling targets; TO_DO is unapproved,
- *  DONE is ZecHub-paid. See docs/zbooks-payouts.md for the full mapping. */
+ *  DONE is ZecHub-paid. See docs/zbooks/payouts.md for the full mapping. */
 export function filterPayableBounties(bounties: ZecBounty[]): ZecBounty[] {
   return bounties.filter(
     (b) =>

@@ -90,7 +90,7 @@ ZBooks's `MemoSignIn` (a customized fork of the published `<MemoSignIn />`) expo
 
 ### Public lightwalletd infrastructure
 
-Per ZecHub developer guidance and standard light-wallet practice, using a **public lightwalletd** is the normal hackathon / small-app path. SIWZ does **not** require you to run your own full Zcash node; that would be a 60-300 GB sync and serious infra. Instead, the `zingo-cli`-based deployment recipe in [`docs/winning-deployment.md`](./winning-deployment.md) points at one of these:
+Per ZecHub developer guidance and standard light-wallet practice, using a **public lightwalletd** is the normal hackathon / small-app path. SIWZ does **not** require you to run your own full Zcash node; that would be a 60-300 GB sync and serious infra. Instead, the `zingo-cli`-based deployment recipe in [`./shielded-deployment.md`](./shielded-deployment.md) points at one of these:
 
 | Endpoint | Notes |
 |---|---|
@@ -100,7 +100,7 @@ Per ZecHub developer guidance and standard light-wallet practice, using a **publ
 
 The operator of any public lightwalletd you sync against learns *which addresses you scan* (metadata leak) but **cannot decrypt your memos** (no IVK). For production deployments with stronger privacy needs, self-host the lightwalletd and Zebra pair; for hackathon use, public is fine and is what most light wallets in the ecosystem do.
 
-For browser-side WebZjs use cases, ChainSafe also operates a gRPC-Web proxy at `https://zcash-mainnet.chainsafe.dev`. That endpoint is not used by our server-side architecture, but is documented in `winning-deployment.md` as the right thing to point at for any future browser-only SIWZ integration.
+For browser-side WebZjs use cases, ChainSafe also operates a gRPC-Web proxy at `https://zcash-mainnet.chainsafe.dev`. That endpoint is not used by our server-side architecture, but is documented in `shielded-deployment.md` as the right thing to point at for any future browser-only SIWZ integration.
 
 ### Service address: transparent vs shielded vs UA
 

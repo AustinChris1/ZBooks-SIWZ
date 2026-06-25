@@ -368,7 +368,7 @@ export function getShieldedExplorer(): Explorer | null {
   return new ZcashRpcExplorer(rpc);
 }
 
-// HTTP client for apps/lightwallet-rpc. See docs/winning-deployment.md.
+// HTTP client for apps/lightwallet-rpc. See docs/siwz/shielded-deployment.md.
 export class LightwalletExplorer implements Explorer {
   constructor(private readonly url: string, private readonly token: string) {}
 

@@ -235,4 +235,4 @@ const address = session?.user?.address;
 
 ## Done
 
-Your app now accepts Sign in with Zcash. For per-wallet user instructions see [wallets.md](./wallets.md). For the security model see [security.md](./security.md). For the wire format see [spec.md](./spec.md). For shielded `signmessage` (ZIP 304) see [sapling-wasm.md](./sapling-wasm.md).
+Your app now accepts Sign in with Zcash. For per-wallet user instructions see [wallets.md](./wallets.md). For the security model see [security.md](../security.md). For the wire format see [spec.md](./spec.md). For shielded `signmessage` (ZIP 304) see [sapling-wasm.md](./sapling-wasm.md).

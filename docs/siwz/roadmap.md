@@ -4,13 +4,15 @@ Where this is going after the hackathon.
 
 ## v0.1 (this submission)
 
-- `@siwz/core`: protocol primitives, ZIP 321 builder/parser, transparent and shielded memo-challenge, pure-TS verification, 59 tests.
+- `@siwz/core`: protocol primitives, ZIP 321 builder/parser, transparent and shielded memo-challenge, pure-TS verification, JWT issue/verify for non-NextAuth backends, 76 tests.
 - `@siwz/react`: `<SignInWithZcash />`, `<MemoSignIn />`, `useSiwz()`, MetaMask Snap detection, EIP-6963 multi-wallet discovery.
-- `@siwz/next-auth`: credentials provider, stateless HMAC nonces, snap envelope.
+- `@siwz/next-auth`: credentials provider, stateless HMAC nonces, snap envelope, optional JWT issuance via `pollMemoHandler({ jwt: { ... } })`.
 - Three sign-in flows: signmessage paste, memo-challenge (ZIP 321), MetaMask Zcash Snap.
 - Two backends for shielded memo decryption: full zcashd RPC, light wallet via `zingo-cli` wrapper.
 - Two reference apps: ZBooks (full production-shape), ZecWall (minimal comments wall as reference integration).
-- ZBooks payouts: non-custodial batch contributor payments via multi-recipient ZIP 321, treasury pre-flight balance check, and auto-reconciliation against the viewing key. See [zbooks-payouts.md](./zbooks-payouts.md).
+- ZBooks payouts: non-custodial batch contributor payments via multi-recipient ZIP 321, treasury pre-flight balance check, and auto-reconciliation against the viewing key. See [../zbooks/payouts.md](../zbooks/payouts.md).
+- ZBooks M-of-N approval gate: payout runs require a configurable threshold of treasurer approvals before the ZIP 321 URI is revealed. Approvals are HMAC-bound to the payable item set, so editing any line invalidates older approvals. Application-layer governance today, FROST-ready by design. Optional Discord webhook for approver notifications.
+- ZBooks ZecBounties import: pull completed bounties straight from `bounties.zechub.wiki` into a draft payout run. Network detection blocks testnet bounties on a mainnet deployment; external-ref dedup prevents paying the same bounty twice.
 - Four end-to-end test scripts covering paste, memo (transparent + shielded), Snap, and payouts (`e2e-payouts.mjs`).
 - Deployment recipe for a $3/mo VPS doing shielded sign-in on real mainnet.
 
@@ -22,18 +24,20 @@ Where this is going after the hackathon.
 - **Wallet-side "this is a sign-in" indicator.** When a `zcash:` URI carries a recognized SIWZ memo prefix (`SIWZ:…`), wallets should label the confirm screen differently ("Sign in to {dApp}") so users know they're authenticating, not paying for a thing.
 - **ZBooks PCZT one-click payouts.** Today a payout run is a multi-recipient ZIP 321 URI the treasurer scans in a multi-recipient wallet (YWallet/Zingo). When the ChainSafe snap's `signPczt` (or a published in-browser wallet lib) is usable, ZBooks builds the transaction itself from the viewing key and the treasurer just approves, removing the per-recipient wallet-support caveat. Still non-custodial: ZBooks never holds the spending key.
 
-## Backend-agnostic adapters
+## Post-v0.1 backend adapters
 
-Not version-numbered because these don't gate on a Zcash protocol upgrade.
-They ship when they ship.
+Extending SIWZ beyond NextAuth so any backend can consume it. Not gated on a
+Zcash protocol upgrade, ships when it ships. JWT export for the memo-challenge
+flow already landed in v0.1; the rest extends the same shape.
 
-- **Standalone JWT export.** `POST /api/auth/siwz/jwt` returns a signed JWT
-  after memo-challenge or signmessage verification. Lets any backend in any
-  language (Express, FastAPI, Phoenix, raw Lambda) consume SIWZ as auth
-  without depending on NextAuth.
+- **JWT export across all three flows.** v0.1 ships memo-challenge JWT via
+  `pollMemoHandler({ jwt: { ... } })`. Next step: extend the same JWT issuance
+  to signmessage verification and snap-envelope verification, so any backend
+  (Express, FastAPI, Phoenix, raw Lambda) can consume any SIWZ flow without
+  NextAuth.
 - **One-shot consumed-nonce registry.** An explicit `consumed_nonces` table
   with TTL so SIWZ stands alone as a replay-proof auth layer outside of
-  NextAuth's per-session signIn guarantee. Ships alongside the JWT export.
+  NextAuth's per-session signIn guarantee.
 - **Linked accounts.** A `siwz_linked_accounts` table and an OAuth bridge
   flow: user signs in with Zcash, then optionally links an email or GitHub
   account for recovery, notifications, or display. The Zcash address stays
@@ -54,8 +58,6 @@ Once [ZIP 226/227](https://zips.z.cash/zip-0226) (Zcash Shielded Assets) are act
 - **Use case for ZBooks:** treasurer-issued team-membership ZSAs. Adding a new member to your books is "send them a ZBooks-Treasurer ZSA", with no admin clicks in our UI, since the membership IS the asset.
 - **Use case for SIWZ generally:** invite-only communities (DAOs, paid newsletters, alpha betas). Holders of `@MyCool DAO Member` ZSAs sign in instantly with no payment.
 
-This is the "v2 story" judges should see in the roadmap section of the submission. It maps directly onto the Infrastructure track's `ZSA GUI` example.
-
 ## v0.5: multi-tenant SIWZ as a service
 
 A hosted version of `@siwz/next-auth` running at `auth.siwz.dev` so apps that don't want to host the verifier themselves can point at it:
@@ -67,13 +69,13 @@ A hosted version of `@siwz/next-auth` running at `auth.siwz.dev` so apps that do
 
 ## v1.0: protocol-shaped governance
 
-Once SIWZ has even a handful of independent integrations, draft a formal protocol document and submit it as a ZIP. The current spec lives in `docs/spec.md`; promoting it to an actual ZIP gives ecosystem partners (wallets, identity tools, DAO platforms) a fixed reference to implement against.
+Once SIWZ has even a handful of independent integrations, draft a formal protocol document and submit it as a ZIP. The current spec lives in `./spec.md`; promoting it to an actual ZIP gives ecosystem partners (wallets, identity tools, DAO platforms) a fixed reference to implement against.
 
 ## What I want from the ecosystem
 
 If you're reading this and you maintain or use a Zcash wallet:
 
-- **Test the memo-challenge flow.** Open ZBooks at `https://zbooks.your-domain.com`, click sign-in, scan with your wallet. Tell us where it broke.
+- **Test the memo-challenge flow.** Open ZBooks at `https://zecbooks.vercel.app`, click sign-in, scan with your wallet. Tell us where it broke.
 - **Open PRs against your wallet** for the v0.2 UX items above: callbacks, OS protocol handlers, sign-in labels.
 - **Use SIWZ in your next hackathon project.** The whole point is composability. If you ship a Zcash app for the next ZecHub hackathon and it has user auth, you should be able to wire SIWZ in an afternoon. If you can't, that's a SIWZ bug, so report it.
 

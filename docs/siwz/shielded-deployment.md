@@ -1,19 +1,26 @@
-# Winning deployment: shielded SIWZ on a $3/mo VPS
+# Shielded SIWZ deployment on a $3/mo VPS
 
-> The deployment shape that makes the hackathon submission "actually Zcash-native": shielded service address, real on-chain memo decryption, no 60GB blockchain sync. Total monthly cost: **~$3** (RackNerd 2GB) or **~$5** (Hetzner CX22).
+> The deployment shape that makes SIWZ end-to-end shielded: shielded service address, real on-chain memo decryption, no 60GB blockchain sync. Total monthly cost: **~$3** (RackNerd 2GB) or **~$5** (Hetzner CX22).
 
 ## The architecture in one picture
 
-```
-┌─────────────────────────────┐         ┌──────────────────────────────┐
-│  Vercel - ZBooks + UI       │         │  $3/mo VPS                   │
-│  - Next.js, NextAuth        │ ──HTTPS→│  - zingo-cli (lite, ~50 MB)  │
-│  - Memo-challenge issuer    │         │  - lightwallet-rpc wrapper   │
-│  - Auto-poll loop           │         │  - nginx + Let's Encrypt     │
-│  Stateless, free hosting    │         │  ↓ gRPC (raw, not gRPC-Web)  │
-└─────────────────────────────┘         │  Public lightwalletd         │
-                                        │  (zec.rocks + mirrors)       │
-                                        └──────────────────────────────┘
+```mermaid
+flowchart LR
+    U[("Browser /<br/>Zcash wallet")]
+    V["<b>Vercel</b><br/>ZBooks UI + Next.js<br/>NextAuth · memo-challenge issuer<br/>auto-poll loop<br/><i>stateless · free</i>"]
+    R["<b>$3/mo VPS</b><br/>zingo-cli (lite, ~50 MB)<br/>lightwallet-rpc wrapper<br/>nginx + Let's Encrypt"]
+    L["<b>Public lightwalletd</b><br/>zec.rocks + mirrors"]
+    U -->|"ZIP 321 QR<br/>sign-in payment"| V
+    V -->|HTTPS<br/>/memos · /transactions · /balance| R
+    R -->|gRPC<br/>raw, not gRPC-Web| L
+    classDef user fill:#fff,stroke:#888,color:#000;
+    classDef vercel fill:#fff4cc,stroke:#c77f0e,stroke-width:2px,color:#000;
+    classDef vps fill:#e0f0ff,stroke:#0066cc,stroke-width:1px,color:#000;
+    classDef lwd fill:#f0f0f0,stroke:#444,color:#000;
+    class U user;
+    class V vercel;
+    class R vps;
+    class L lwd;
 ```
 
 The VPS runs `zingo-cli` in lite mode (syncs only your service address from a public `lightwalletd`, ~50 MB disk) plus a small Node wrapper that exposes three POST endpoints over HTTPS:
@@ -77,7 +84,7 @@ curl -sL https://raw.githubusercontent.com/<your-org>/SWZ/main/scripts/setup-lig
     bash
 ```
 
-The script ([`scripts/setup-lightwallet-vps.sh`](../scripts/setup-lightwallet-vps.sh)) does:
+The script ([`scripts/setup-lightwallet-vps.sh`](../../scripts/setup-lightwallet-vps.sh)) does:
 
 1. `apt update` + installs Node 20, nginx, certbot, ufw, git.
 2. Configures firewall (SSH + nginx, nothing else).
@@ -104,7 +111,7 @@ LIGHTWALLET_RPC_TOKEN=<the long random token the installer printed>
 SIWZ_DEMO=0
 ```
 
-Redeploy. The `getShieldedExplorer()` dispatcher in [`apps/demo/src/lib/explorer.ts`](../apps/demo/src/lib/explorer.ts) auto-picks `LightwalletExplorer` when `LIGHTWALLET_RPC_URL` is set. The memo-challenge issue and poll endpoints now operate against your shielded address with real on-chain memo decryption.
+Redeploy. The `getShieldedExplorer()` dispatcher in [`apps/demo/src/lib/explorer.ts`](../../apps/demo/src/lib/explorer.ts) auto-picks `LightwalletExplorer` when `LIGHTWALLET_RPC_URL` is set. The memo-challenge issue and poll endpoints now operate against your shielded address with real on-chain memo decryption.
 
 ## What the end-to-end demo looks like now
 
@@ -145,7 +152,7 @@ https://zcash-mainnet.chainsafe.dev
 
 This is what ChainSafe's WebZjs library and Zcash MetaMask Snap use. Our `zingo-cli`-based architecture doesn't use it (zingo speaks raw gRPC), but if you wire SIWZ directly into a browser app via WebZjs in the future, this is the endpoint to pass.
 
-> **Honest note on WebZjs as a Node library**: as of this writing (May 2026), the `@chainsafe/webzjs-wallet` npm package referenced in WebZjs's repo README is **not yet published** to the npm registry. I verified against `https://registry.npmjs.com/@chainsafe/webzjs-wallet` (404). The only ChainSafe WebZjs-related package currently installable from npm is `@chainsafe/webzjs-zcash-snap` (the MetaMask Snap), which we integrate via [`packages/siwz-react/src/snap.ts`](../packages/siwz-react/src/snap.ts). When ChainSafe publishes the lite-wallet library, a future `WebZjsExplorer` could replace this VPS in pure-serverless deployments. For now, `zingo-cli` on a small VPS is the only working server-side option for shielded sign-in.
+> **Honest note on WebZjs as a Node library**: as of this writing (May 2026), the `@chainsafe/webzjs-wallet` npm package referenced in WebZjs's repo README is **not yet published** to the npm registry. I verified against `https://registry.npmjs.com/@chainsafe/webzjs-wallet` (404). The only ChainSafe WebZjs-related package currently installable from npm is `@chainsafe/webzjs-zcash-snap` (the MetaMask Snap), which we integrate via [`packages/siwz-react/src/snap.ts`](../../packages/siwz-react/src/snap.ts). When ChainSafe publishes the lite-wallet library, a future `WebZjsExplorer` could replace this VPS in pure-serverless deployments. For now, `zingo-cli` on a small VPS is the only working server-side option for shielded sign-in.
 
 If you ever want to migrate the wallet to another VPS:
 

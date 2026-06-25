@@ -115,7 +115,7 @@ export async function verifySaplingSignature(
   if (!verifier) {
     return failure(
       "VERIFIER_UNAVAILABLE",
-      "Sapling verification requires a ZIP 304 verifier — pass `saplingVerifier` to verifyMessage. See docs/sapling-wasm.md.",
+      "Sapling verification requires a ZIP 304 verifier. Pass `saplingVerifier` to verifyMessage. See docs/siwz/sapling-wasm.md.",
     );
   }
 

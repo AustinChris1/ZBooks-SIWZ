@@ -16,18 +16,19 @@ The `MemoSignIn` and `SignInWithZcash` components live side by side in the UI. A
 
 ## Layered packages
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Your app                                                    │
-│  (ZBooks · ZecWall · anything you build next)                │
-├──────────────────────────────────────────────────────────────┤
-│  @siwz/react        components · hooks · QR · polling        │
-├──────────────────────────────────────────────────────────────┤
-│  @siwz/next-auth    SiwzProvider · issueNonce · envelope     │
-├──────────────────────────────────────────────────────────────┤
-│  @siwz/core         message format · ZIP 321 · verify · …    │
-│  (pure TS, no React, no Node-only deps, 59 tests)            │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["<b>Your app</b><br/>ZBooks · ZecWall · anything you build next"]
+    B["<b>@siwz/react</b><br/>components · hooks · QR · polling"]
+    C["<b>@siwz/next-auth</b><br/>SiwzProvider · issueNonce · envelope · JWT export"]
+    D["<b>@siwz/core</b><br/>message format · ZIP 321 · verify · memo-challenge · JWT<br/><i>pure TS · 76 tests · no React or Node-only deps</i>"]
+    A --> B --> C --> D
+    classDef app fill:#fff4cc,stroke:#c77f0e,stroke-width:2px,color:#000;
+    classDef pkg fill:#e0f0ff,stroke:#0066cc,stroke-width:1px,color:#000;
+    classDef core fill:#f0f0f0,stroke:#444,stroke-width:2px,color:#000;
+    class A app;
+    class B,C pkg;
+    class D core;
 ```
 
 Each layer is independently usable:
@@ -65,7 +66,7 @@ Implementations that ship today:
 | `LightwalletExplorer` | apps/demo (reference) | – | ✅ | HTTP client for the `apps/lightwallet-rpc` `zingo-cli` wrapper. Also satisfies UFVK sync/balance methods. |
 | `MockExplorer` | apps/demo (reference) | ✅ | ✅ | In-memory, for DEMO mode and tests. |
 
-`pollMemoHandler` from `@siwz/next-auth/memo` defaults to `new MultiExplorer([new ThreeXplExplorer(), new BlockchairExplorer()])` for transparent. Consumers don't have to think about explorers unless they want to override. See [`docs/winning-deployment.md`](./winning-deployment.md) for the lightwallet-rpc deployment recipe.
+`pollMemoHandler` from `@siwz/next-auth/memo` defaults to `new MultiExplorer([new ThreeXplExplorer(), new BlockchairExplorer()])` for transparent. Consumers don't have to think about explorers unless they want to override. See [`./shielded-deployment.md`](./shielded-deployment.md) for the lightwallet-rpc deployment recipe.
 
 ## ZBooks payouts: non-custodial, on top of the viewing key
 
@@ -74,7 +75,7 @@ contributors, without ever holding a spending key. It builds a single
 multi-recipient ZIP 321 URI for a payout run; the treasurer signs in their own
 wallet; ZBooks then watches the treasury UFVK and reconciles the outgoing tx back
 to each payout line. Custodial sending was considered and rejected; PCZT
-one-click signing is roadmap. Full design in [`zbooks-payouts.md`](./zbooks-payouts.md).
+one-click signing is roadmap. Full design in [`../zbooks/payouts.md`](../zbooks/payouts.md).
 
 ## ZBooks data layer: encryption-at-rest and recovery
 
@@ -95,7 +96,7 @@ HTTPS). The non-protocol hardening layered on top:
   own retries indefinitely.
 
 Full descriptions, ciphertext format, and rotation guidance in
-[`security.md`](./security.md#zbooks-application-layer-hardening).
+[`security.md`](../security.md#zbooks-application-layer-hardening).
 
 ## Stateless nonces
 
@@ -107,7 +108,7 @@ Same pattern is used for the memo-challenge token and the snap-auth envelope.
 
 ## Threat model: what's protected vs. what isn't
 
-See [`security.md`](./security.md) for the full table. The short version:
+See [`security.md`](../security.md) for the full table. The short version:
 
 - Protected: Replay across sessions, across apps, across networks, across the Zcash/Bitcoin universe.
 - Protected: Address spoofing (cryptographically bound to the recovered pubkey or the matched on-chain tx).
@@ -122,7 +123,7 @@ See [`security.md`](./security.md) for the full table. The short version:
 The architecture supports several:
 
 1. **Vercel + free public explorers**: transparent sign-in only. $0 infra. Default `MultiExplorer(3xpl + Blockchair)` covers it. ZBooks's current production-ready shape.
-2. **Vercel + remote light-wallet RPC**: shielded sign-in. Add a $3-5/mo VPS running the apps/lightwallet-rpc Docker image (Zingo-CLI-based). See `docs/winning-deployment.md`.
+2. **Vercel + remote light-wallet RPC**: shielded sign-in. Add a $3-5/mo VPS running the apps/lightwallet-rpc Docker image (Zingo-CLI-based). See `./shielded-deployment.md`.
 3. **Everything on one VPS**: simplest single-server deployment. Both flows available. Production trade-off: you maintain a server, you can't horizontally scale the wallet sync state.
 4. **Self-hosted node + shielded**: for maximum privacy you can run your own zcashd or zallet and skip the light-wallet step. ~60 GB disk, multi-day sync, full sovereignty.
 

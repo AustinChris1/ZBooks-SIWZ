@@ -84,7 +84,7 @@ printf '%s' "<paste exact message here>" > /tmp/siwz-challenge.txt
 zcash-cli signmessage "<your t1 address>" "$(cat /tmp/siwz-challenge.txt)"
 ```
 
-Any byte-level difference between what you sign and what the server verifies = `ADDRESS_MISMATCH`. See [`security.md`](./security.md) for the diagnostic tool that recovers the address from a signature.
+Any byte-level difference between what you sign and what the server verifies = `ADDRESS_MISMATCH`. See [`security.md`](../security.md) for the diagnostic tool that recovers the address from a signature.
 
 ### YWallet
 

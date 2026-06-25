@@ -116,7 +116,7 @@ export const POST = pollMemoHandler({
 
 `pollMemoHandler` dispatches by the address type encoded in the issue token. Transparent service addresses use the free public default; shielded ones use your `shieldedExplorer`.
 
-For deploying a `zingo-cli`-backed shielded backend, see [`winning-deployment.md`](./winning-deployment.md) and [`apps/lightwallet-rpc`](../apps/lightwallet-rpc) (Docker image available).
+For deploying a `zingo-cli`-backed shielded backend, see [`shielded-deployment.md`](./shielded-deployment.md) and [`apps/lightwallet-rpc`](../../apps/lightwallet-rpc) (Docker image available).
 
 ---
 
