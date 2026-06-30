@@ -16,6 +16,14 @@ export interface ZecBountyUser {
   role?: string | null;
 }
 
+export interface ZecBountyAssignment {
+  id?: string;
+  bountyId?: string;
+  userId?: string;
+  assignedAt?: string;
+  user?: ZecBountyUser | null;
+}
+
 export interface ZecBounty {
   id: string;
   title: string;
@@ -30,8 +38,38 @@ export interface ZecBounty {
   paidAt?: string | null;
   categoryId?: string | null;
   difficulty?: "EASY" | "MEDIUM" | "HARD";
+  // Legacy single-assignee field. Null when there are multiple assignees;
+  // in that case the data is in `assignees[]`.
   assigneeUser?: ZecBountyUser | null;
+  // Newer multi-assignee field. Always present in current API responses.
+  assignees?: ZecBountyAssignment[];
   createdByUser?: ZecBountyUser | null;
+}
+
+/** Resolve the assignee for payout purposes. Returns the single assignee user
+ *  when there is exactly one, "multi" if there are more, or null if none. */
+export function resolveAssignee(bounty: ZecBounty): ZecBountyUser | "multi" | null {
+  if (bounty.assigneeUser?.z_address) return bounty.assigneeUser;
+  const list = bounty.assignees ?? [];
+  if (list.length === 0) return bounty.assigneeUser ?? null;
+  if (list.length > 1) return "multi";
+  const only = list[0]?.user;
+  return only ?? null;
+}
+
+/** Get the effective payout assignee. Accepts an optional override (a userId
+ *  from `bounty.assignees[]`) so the treasurer can pick a payee for
+ *  multi-assignee bounties from inside ZBooks. */
+export function getEffectiveAssignee(
+  bounty: ZecBounty,
+  overrideUserId?: string,
+): ZecBountyUser | null {
+  if (overrideUserId) {
+    const match = bounty.assignees?.find((a) => a.userId === overrideUserId);
+    return match?.user ?? null;
+  }
+  const auto = resolveAssignee(bounty);
+  return auto === "multi" || auto === null ? null : auto;
 }
 
 interface BountiesResponse {
@@ -74,17 +112,23 @@ export async function fetchAllBounties(): Promise<ZecBounty[]> {
   return all;
 }
 
-/** IN_PROGRESS + IN_REVIEW bounties are scheduling targets; TO_DO is unapproved,
- *  DONE is ZecHub-paid. See docs/zbooks/payouts.md for the full mapping. */
+/** Payable statuses are IN_PROGRESS, IN_REVIEW, and DONE-without-isPaid (the
+ *  most canonical "work approved, payment pending" state). TO_DO is too early;
+ *  CANCELLED is out; DONE+isPaid means already paid upstream. Multi-assignee
+ *  bounties are payable but need the treasurer to pick a payee first via the
+ *  ImportClient UI, so this function excludes them; see `buildImportCandidates`
+ *  which surfaces them with `pickableAssignees`. We do NOT gate on upstream
+ *  `isApproved`: that flag is inconsistent. ZBooks's own M-of-N approval gate
+ *  is the real authorisation, applied by the treasurer at payout time. */
 export function filterPayableBounties(bounties: ZecBounty[]): ZecBounty[] {
-  return bounties.filter(
-    (b) =>
-      (b.status === "IN_PROGRESS" || b.status === "IN_REVIEW") &&
-      b.isApproved &&
-      !b.isPaid &&
-      !!b.assigneeUser?.z_address &&
-      b.bountyAmount > 0,
-  );
+  return bounties.filter((b) => {
+    if (b.status === "CANCELLED" || b.status === "TO_DO") return false;
+    if (b.isPaid) return false;
+    if (!(b.bountyAmount > 0)) return false;
+    const assignee = resolveAssignee(b);
+    if (assignee === null || assignee === "multi") return false;
+    return !!assignee.z_address;
+  });
 }
 
 export type ZcashNetwork = "mainnet" | "testnet" | "regtest" | "unknown";
@@ -109,7 +153,9 @@ export function detectAddressNetwork(address: string): ZcashNetwork {
 
 export type BountyBlockReason =
   | "payable"
+  | "needs_assignee_pick"
   | "no_assignee"
+  | "multi_assignee"
   | "no_address"
   | "amount_zero"
   | "in_progress"
@@ -119,12 +165,24 @@ export type BountyBlockReason =
   | "address_unknown"
   | "network_mismatch";
 
+/** One pickable payee on a multi-assignee bounty. The treasurer picks one. */
+export interface PickableAssignee {
+  userId: string;
+  name: string;
+  z_address: string;
+  network: ZcashNetwork;
+}
+
 export interface BountyImportCandidate {
   bounty: ZecBounty;
   network: ZcashNetwork;
   payable: boolean;
   reason: BountyBlockReason;
   reasonLabel: string;
+  /** Present when the bounty has multiple assignees with at least one having
+   *  a z_address. The UI shows a picker; once a pick is made the bounty
+   *  becomes payable in the treasurer's selection. */
+  pickableAssignees?: PickableAssignee[];
 }
 
 /** Decorate every bounty with the reason it is or isn't importable. */
@@ -133,31 +191,48 @@ export function buildImportCandidates(
   zbooksNetwork: "mainnet" | "testnet" | "regtest",
 ): BountyImportCandidate[] {
   return bounties.map((bounty) => {
-    const address = bounty.assigneeUser?.z_address ?? "";
+    const assignee = resolveAssignee(bounty);
+    const address = assignee && assignee !== "multi" ? assignee.z_address ?? "" : "";
     const network = detectAddressNetwork(address);
 
-    // Reason precedence: work state first, then assignee, then network.
     let reason: BountyBlockReason = "payable";
     let reasonLabel = "Ready to pay";
+    let pickableAssignees: PickableAssignee[] | undefined;
 
     if (bounty.status === "CANCELLED") {
       reason = "cancelled";
       reasonLabel = "Cancelled upstream";
     } else if (bounty.status === "TO_DO") {
       reason = "in_progress";
-      reasonLabel = "TO_DO upstream (not yet started / approved)";
-    } else if (bounty.status === "DONE") {
-      reason = "already_paid";
-      reasonLabel = bounty.isPaid
-        ? "Marked paid on zec-bounties"
-        : "Marked DONE upstream (payment is being handled there)";
-    } else if (!bounty.isApproved) {
-      reason = "not_approved";
-      reasonLabel = "Not yet approved by reviewer";
+      reasonLabel = "TO_DO upstream (not yet started)";
     } else if (bounty.isPaid) {
       reason = "already_paid";
       reasonLabel = "Already paid on zec-bounties";
-    } else if (!bounty.assigneeUser) {
+    } else if (assignee === "multi") {
+      // Multi-assignee: collect each assignee with a usable address; expose
+      // them for the UI picker. The treasurer chooses one before importing.
+      const picks: PickableAssignee[] = [];
+      for (const a of bounty.assignees ?? []) {
+        const addr = a.user?.z_address ?? "";
+        if (!a.user || !a.userId || !addr) continue;
+        const net = detectAddressNetwork(addr);
+        if (net !== zbooksNetwork) continue;
+        picks.push({
+          userId: a.userId,
+          name: a.user.name ?? a.userId.slice(0, 8),
+          z_address: addr,
+          network: net,
+        });
+      }
+      if (picks.length === 0) {
+        reason = "multi_assignee";
+        reasonLabel = `Multiple assignees, none with a ${zbooksNetwork} address on file.`;
+      } else {
+        reason = "needs_assignee_pick";
+        reasonLabel = `Multiple assignees (${bounty.assignees?.length ?? picks.length}). Pick a payee to import.`;
+        pickableAssignees = picks;
+      }
+    } else if (assignee === null) {
       reason = "no_assignee";
       reasonLabel = "No assignee set";
     } else if (!address) {
@@ -180,23 +255,31 @@ export function buildImportCandidates(
       payable: reason === "payable",
       reason,
       reasonLabel,
+      ...(pickableAssignees ? { pickableAssignees } : {}),
     };
   });
 }
 
-/** Shape a bounty into the fields ZBooks's payout_items table needs. */
-export function bountyToPayoutLine(bounty: ZecBounty): {
+/** Shape a bounty into the fields ZBooks's payout_items table needs. Pass
+ *  `overrideAssigneeUserId` to pick a specific payee from a multi-assignee
+ *  bounty (the userId must be present in `bounty.assignees[]`). */
+export function bountyToPayoutLine(
+  bounty: ZecBounty,
+  overrideAssigneeUserId?: string,
+): {
   label: string;
   address: string;
   amount_zec: number;
   memo: string;
   external_ref: string;
 } {
+  const assignee = getEffectiveAssignee(bounty, overrideAssigneeUserId);
+  if (!assignee?.z_address) {
+    throw new Error(`bountyToPayoutLine: bounty ${bounty.id} has no resolvable assignee with a z_address`);
+  }
   return {
-    label: bounty.assigneeUser?.name
-      ? `${bounty.assigneeUser.name}: ${bounty.title}`
-      : bounty.title,
-    address: bounty.assigneeUser!.z_address!,
+    label: assignee.name ? `${assignee.name}: ${bounty.title}` : bounty.title,
+    address: assignee.z_address,
     amount_zec: bounty.bountyAmount,
     memo: `zec-bounty: ${bounty.title}`.slice(0, 512),
     external_ref: `zec-bounties:${bounty.id}`,

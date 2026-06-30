@@ -27,7 +27,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (typeof body.archived === "boolean") patch.archived = body.archived;
 
   try {
-    return NextResponse.json({ payee: updatePayee(params.id, patch) });
+    return NextResponse.json({ payee: await updatePayee(params.id, patch) });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 404 });
   }
@@ -38,7 +38,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
   try {
-    updatePayee(params.id, { archived: true });
+    await updatePayee(params.id, { archived: true });
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 404 });

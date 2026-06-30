@@ -27,7 +27,8 @@ export default async function ZecBountiesImportPage() {
   }
 
   const payable = candidates.filter((c) => c.payable);
-  const blocked = candidates.filter((c) => !c.payable);
+  const pickable = candidates.filter((c) => c.reason === "needs_assignee_pick");
+  const blocked = candidates.filter((c) => !c.payable && c.reason !== "needs_assignee_pick");
 
   const runs = await listRuns();
   const draftRuns = runs.filter((r) => r.status === "draft");
@@ -73,6 +74,7 @@ export default async function ZecBountiesImportPage() {
       ) : (
         <ImportClient
           payable={payable}
+          pickable={pickable}
           blocked={blocked}
           zbooksNetwork={SIWZ_NETWORK}
           draftRuns={draftRuns.map((r) => ({ id: r.id, title: r.title }))}

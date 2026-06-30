@@ -44,7 +44,7 @@ export async function PATCH(
   }
 
   try {
-    const updated = tagTransaction(params.id, patch);
+    const updated = await tagTransaction(params.id, patch);
     return NextResponse.json({ transaction: updated });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 404 });

@@ -14,6 +14,6 @@ export async function DELETE(
   if (addr === auth.address) {
     return NextResponse.json({ error: "You can't remove yourself." }, { status: 400 });
   }
-  removeMember(addr);
+  await removeMember(addr);
   return NextResponse.json({ ok: true });
 }

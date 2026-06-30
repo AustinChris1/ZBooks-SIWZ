@@ -5,21 +5,26 @@ import {
   bountyToPayoutLine,
   detectAddressNetwork,
   fetchAllBounties,
-  filterPayableBounties,
+  getEffectiveAssignee,
   type ZecBounty,
 } from "@/lib/zec-bounties";
 import { SIWZ_NETWORK } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// POST { bountyIds: string[], target: { type: "new", title?: string, sourceUfvkId?: string } | { type: "existing", runId: string } }
-// Returns { ok: true, runId, added: number, skipped: { id, reason }[] }
+// POST {
+//   bountyIds: string[],
+//   assigneeOverrides?: { [bountyId]: userId },   // for multi-assignee bounties
+//   target: { type: "new", title?, sourceUfvkId? } | { type: "existing", runId }
+// }
+// Returns { ok: true, runId, added, skipped: { id, reason }[] }
 export async function POST(req: Request) {
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
 
   let body: {
     bountyIds?: unknown;
+    assigneeOverrides?: unknown;
     target?: { type?: unknown; title?: unknown; sourceUfvkId?: unknown; runId?: unknown };
   };
   try {
@@ -36,6 +41,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "max 100 bounties per import" }, { status: 400 });
   }
 
+  // Parse optional assignee overrides: { [bountyId]: userId }
+  const overrides: Record<string, string> = {};
+  if (body.assigneeOverrides && typeof body.assigneeOverrides === "object") {
+    for (const [k, v] of Object.entries(body.assigneeOverrides as Record<string, unknown>)) {
+      if (typeof v === "string" && v) overrides[k] = v;
+    }
+  }
+
   let upstream: ZecBounty[];
   try {
     upstream = await fetchAllBounties();
@@ -46,47 +59,56 @@ export async function POST(req: Request) {
     );
   }
 
-  const wanted = new Set(ids);
-  const selected = upstream.filter((b) => wanted.has(b.id));
-  const payable = filterPayableBounties(selected);
-
   const skipped: { id: string; reason: string }[] = [];
+  const upstreamById = new Map(upstream.map((b) => [b.id, b]));
 
+  // Resolve each requested id into (bounty, effective assignee). Skip those
+  // that fail any payability check, with a specific reason.
+  type Resolved = { bounty: ZecBounty; address: string };
+  const resolved: Resolved[] = [];
   for (const id of ids) {
-    if (!upstream.some((b) => b.id === id)) {
+    const b = upstreamById.get(id);
+    if (!b) {
       skipped.push({ id, reason: "Not found upstream" });
       continue;
     }
-    const b = selected.find((x) => x.id === id)!;
-    if (!payable.includes(b)) {
-      const reason = !b.assigneeUser?.z_address
-        ? "No assignee address"
-        : b.isPaid
-        ? "Already marked paid upstream"
-        : b.status !== "DONE"
-        ? `Status is ${b.status}, not DONE`
-        : !b.isApproved
-        ? "Not approved"
-        : "Not payable";
-      skipped.push({ id, reason });
+    if (b.status === "CANCELLED" || b.status === "TO_DO") {
+      skipped.push({ id, reason: `Status is ${b.status}, not payable` });
+      continue;
     }
+    if (b.isPaid) {
+      skipped.push({ id, reason: "Already marked paid upstream" });
+      continue;
+    }
+    if (!(b.bountyAmount > 0)) {
+      skipped.push({ id, reason: "Amount is zero" });
+      continue;
+    }
+    const assignee = getEffectiveAssignee(b, overrides[id]);
+    if (!assignee?.z_address) {
+      skipped.push({
+        id,
+        reason: overrides[id]
+          ? "Picked assignee has no z_address on file"
+          : "No assignee, or multi-assignee without a pick selected",
+      });
+      continue;
+    }
+    const net = detectAddressNetwork(assignee.z_address);
+    if (net !== SIWZ_NETWORK) {
+      skipped.push({ id, reason: `${net} address, this ZBooks runs on ${SIWZ_NETWORK}` });
+      continue;
+    }
+    resolved.push({ bounty: b, address: assignee.z_address });
   }
 
-  // Filter again by network (don't accept off-network even if the caller forced it)
-  const onNetwork = payable.filter((b) => {
-    const net = detectAddressNetwork(b.assigneeUser!.z_address!);
-    if (net === SIWZ_NETWORK) return true;
-    skipped.push({ id: b.id, reason: `${net} address, this ZBooks runs on ${SIWZ_NETWORK}` });
-    return false;
-  });
-
   // Dedupe against payout_items.external_ref
-  const refs = onNetwork.map((b) => `zec-bounties:${b.id}`);
+  const refs = resolved.map((r) => `zec-bounties:${r.bounty.id}`);
   const existing = await findExistingExternalRefs(refs);
-  const fresh = onNetwork.filter((b) => !existing.has(`zec-bounties:${b.id}`));
-  for (const b of onNetwork) {
-    if (existing.has(`zec-bounties:${b.id}`)) {
-      skipped.push({ id: b.id, reason: "Already imported into a previous run" });
+  const fresh = resolved.filter((r) => !existing.has(`zec-bounties:${r.bounty.id}`));
+  for (const r of resolved) {
+    if (existing.has(`zec-bounties:${r.bounty.id}`)) {
+      skipped.push({ id: r.bounty.id, reason: "Already imported into a previous run" });
     }
   }
 
@@ -94,7 +116,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No bounties to import", skipped, added: 0 }, { status: 400 });
   }
 
-  // Determine target run
   let runId: string;
   const target = body.target ?? {};
   if (target.type === "existing" && typeof target.runId === "string") {
@@ -113,8 +134,8 @@ export async function POST(req: Request) {
   }
 
   let added = 0;
-  for (const b of fresh) {
-    const line = bountyToPayoutLine(b);
+  for (const r of fresh) {
+    const line = bountyToPayoutLine(r.bounty, overrides[r.bounty.id]);
     try {
       await addLineItem(runId, {
         label: line.label,
@@ -126,7 +147,7 @@ export async function POST(req: Request) {
       });
       added += 1;
     } catch (err) {
-      skipped.push({ id: b.id, reason: `Insert failed: ${(err as Error).message}` });
+      skipped.push({ id: r.bounty.id, reason: `Insert failed: ${(err as Error).message}` });
     }
   }
 

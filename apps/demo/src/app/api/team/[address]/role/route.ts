@@ -28,7 +28,7 @@ export async function PATCH(
     return NextResponse.json({ error: "You can't demote yourself." }, { status: 400 });
   }
   try {
-    setRole(addr, role as Role);
+    await setRole(addr, role as Role);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 404 });

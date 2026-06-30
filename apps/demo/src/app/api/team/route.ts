@@ -10,7 +10,7 @@ const ROLES: Role[] = ["admin", "treasurer", "viewer"];
 export async function GET() {
   const auth = await requireRole("admin", "treasurer", "viewer");
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
-  return NextResponse.json({ team: listMembers() });
+  return NextResponse.json({ team: await listMembers() });
 }
 
 export async function POST(req: Request) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid role" }, { status: 400 });
   }
   try {
-    const m = addTeamMember(address, role as Role, auth.address);
+    const m = await addTeamMember(address, role as Role, auth.address);
     return NextResponse.json({ member: m });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });

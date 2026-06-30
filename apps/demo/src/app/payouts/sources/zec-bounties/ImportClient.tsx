@@ -2,10 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { BountyBlockReason, BountyImportCandidate } from "@/lib/zec-bounties";
+import {
+  resolveAssignee,
+  type BountyBlockReason,
+  type BountyImportCandidate,
+} from "@/lib/zec-bounties";
 
 interface Props {
   payable: BountyImportCandidate[];
+  pickable: BountyImportCandidate[];
   blocked: BountyImportCandidate[];
   zbooksNetwork: string;
   draftRuns: { id: string; title: string }[];
@@ -18,6 +23,7 @@ const REASON_ORDER: BountyBlockReason[] = [
   "in_progress",
   "not_approved",
   "already_paid",
+  "multi_assignee",
   "no_assignee",
   "no_address",
   "amount_zero",
@@ -28,9 +34,11 @@ const REASON_ORDER: BountyBlockReason[] = [
 
 const REASON_HEADING: Record<BountyBlockReason, string> = {
   payable: "Ready to pay",
+  needs_assignee_pick: "Pick a payee",
   in_progress: "Work in progress",
   not_approved: "Not yet approved",
   already_paid: "Already paid upstream",
+  multi_assignee: "Multiple assignees, none with a usable address",
   no_assignee: "No assignee set",
   no_address: "Assignee has no z_address",
   amount_zero: "Amount is zero",
@@ -39,9 +47,19 @@ const REASON_HEADING: Record<BountyBlockReason, string> = {
   cancelled: "Cancelled upstream",
 };
 
-export function ImportClient({ payable, blocked, zbooksNetwork, draftRuns, keys }: Props) {
+function displayAssignee(c: BountyImportCandidate): { name: string; address?: string } {
+  const auto = resolveAssignee(c.bounty);
+  if (auto && auto !== "multi") {
+    return { name: auto.name ?? "(no name)", address: auto.z_address ?? undefined };
+  }
+  return { name: c.bounty.assigneeUser?.name ?? "(unassigned)" };
+}
+
+export function ImportClient({ payable, pickable, blocked, zbooksNetwork, draftRuns, keys }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // For each pickable bounty, which assignee userId the treasurer chose.
+  const [picks, setPicks] = useState<Record<string, string>>({});
   const [targetMode, setTargetMode] = useState<TargetMode>("new");
   const [newTitle, setNewTitle] = useState(`ZecBounties · ${new Date().toISOString().slice(0, 10)}`);
   const [sourceUfvkId, setSourceUfvkId] = useState<string>(keys[0]?.id ?? "");
@@ -63,13 +81,27 @@ export function ImportClient({ payable, blocked, zbooksNetwork, draftRuns, keys 
     else setSelected(new Set(payable.map((c) => c.bounty.id)));
   };
 
-  const total = useMemo(
-    () =>
-      payable
-        .filter((c) => selected.has(c.bounty.id))
-        .reduce((s, c) => s + c.bounty.bountyAmount, 0),
-    [payable, selected],
-  );
+  const setPick = (bountyId: string, userId: string) => {
+    setPicks((prev) => ({ ...prev, [bountyId]: userId }));
+    if (!userId) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(bountyId);
+        return next;
+      });
+    }
+  };
+
+  const total = useMemo(() => {
+    let sum = 0;
+    for (const c of payable) {
+      if (selected.has(c.bounty.id)) sum += c.bounty.bountyAmount;
+    }
+    for (const c of pickable) {
+      if (selected.has(c.bounty.id) && picks[c.bounty.id]) sum += c.bounty.bountyAmount;
+    }
+    return sum;
+  }, [payable, pickable, selected, picks]);
 
   // Group blocked by reason for the "Other bounties" section.
   const grouped = useMemo(() => {
@@ -93,10 +125,17 @@ export function ImportClient({ payable, blocked, zbooksNetwork, draftRuns, keys 
         targetMode === "existing" && existingRunId
           ? { type: "existing" as const, runId: existingRunId }
           : { type: "new" as const, title: newTitle, sourceUfvkId: sourceUfvkId || undefined };
+      // Only forward picks for bounties that are actually selected.
+      const assigneeOverrides: Record<string, string> = {};
+      for (const id of selected) if (picks[id]) assigneeOverrides[id] = picks[id]!;
       const res = await fetch("/api/payouts/import-zec-bounties", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bountyIds: Array.from(selected), target }),
+        body: JSON.stringify({
+          bountyIds: Array.from(selected),
+          assigneeOverrides,
+          target,
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as {
         error?: string;
@@ -143,18 +182,19 @@ export function ImportClient({ payable, blocked, zbooksNetwork, draftRuns, keys 
         </h2>
         {payable.length === 0 ? (
           <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 p-6 text-sm text-neutral-500">
-            No bounties currently match all of: <code className="font-mono text-xs">status=DONE</code>,{" "}
-            <code className="font-mono text-xs">isApproved=true</code>,{" "}
-            <code className="font-mono text-xs">isPaid=false</code>, with an assignee on{" "}
-            <code className="font-mono text-xs">{zbooksNetwork}</code>. See "Other bounties" below for everything
-            else upstream and why each one isn't selectable right now.
+            No bounties currently match: status in (IN_PROGRESS, IN_REVIEW, DONE), not paid yet, with a single assignee on{" "}
+            <code className="font-mono text-xs">{zbooksNetwork}</code>.
+            {pickable.length > 0 && (
+              <> See "Pick a payee" below for multi-assignee bounties you can still resolve.</>
+            )}
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
-            {payable.map(({ bounty }) => {
-              const checked = selected.has(bounty.id);
+            {payable.map((c) => {
+              const checked = selected.has(c.bounty.id);
+              const who = displayAssignee(c);
               return (
-                <li key={bounty.id}>
+                <li key={c.bounty.id}>
                   <label
                     className={`block rounded-xl border p-4 cursor-pointer transition-colors ${
                       checked
@@ -166,24 +206,25 @@ export function ImportClient({ payable, blocked, zbooksNetwork, draftRuns, keys 
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() => toggle(bounty.id)}
+                        onChange={() => toggle(c.bounty.id)}
                         className="mt-1 h-4 w-4 accent-zcash-yellow"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline justify-between gap-3">
-                          <div className="font-semibold tracking-tight truncate">{bounty.title}</div>
+                          <div className="font-semibold tracking-tight truncate">{c.bounty.title}</div>
                           <div className="font-mono text-sm tabular-nums whitespace-nowrap">
-                            {bounty.bountyAmount.toLocaleString(undefined, { maximumFractionDigits: 8 })} ZEC
+                            {c.bounty.bountyAmount.toLocaleString(undefined, { maximumFractionDigits: 8 })} ZEC
                           </div>
                         </div>
                         <div className="text-xs text-neutral-500 flex flex-wrap gap-x-3 gap-y-1 pt-1">
-                          <span>{bounty.assigneeUser?.name ?? "Unassigned"}</span>
-                          {bounty.categoryId && <span>{bounty.categoryId}</span>}
-                          <span>created {new Date(bounty.dateCreated).toLocaleDateString()}</span>
+                          <span>{who.name}</span>
+                          <span>status: {c.bounty.status}</span>
+                          {c.bounty.categoryId && <span>{c.bounty.categoryId}</span>}
+                          <span>created {new Date(c.bounty.dateCreated).toLocaleDateString()}</span>
                         </div>
-                        <div className="font-mono text-[10px] text-neutral-400 truncate pt-1">
-                          {bounty.assigneeUser?.z_address}
-                        </div>
+                        {who.address && (
+                          <div className="font-mono text-[10px] text-neutral-400 truncate pt-1">{who.address}</div>
+                        )}
                       </div>
                     </div>
                   </label>
@@ -193,6 +234,82 @@ export function ImportClient({ payable, blocked, zbooksNetwork, draftRuns, keys 
           </ul>
         )}
       </section>
+
+      {pickable.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">
+              Pick a payee <span className="text-neutral-500 font-normal">({pickable.length})</span>
+            </h2>
+            <p className="text-xs text-neutral-500 pt-1">
+              These bounties have multiple assignees. Choose one payee per bounty and check the box to include it. The full bounty amount goes to the picked address. ZecHub picks a single payee at finalisation; you can pick earlier here.
+            </p>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {pickable.map((c) => {
+              const checked = selected.has(c.bounty.id);
+              const chosen = picks[c.bounty.id] ?? "";
+              const picksList = c.pickableAssignees ?? [];
+              const canCheck = !!chosen;
+              return (
+                <li key={c.bounty.id}>
+                  <div
+                    className={`rounded-xl border p-4 transition-colors ${
+                      checked
+                        ? "border-zcash-yellow bg-zcash-yellow/5"
+                        : "border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/40"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!canCheck}
+                        onChange={() => toggle(c.bounty.id)}
+                        className="mt-1 h-4 w-4 accent-zcash-yellow disabled:opacity-40"
+                      />
+                      <div className="flex-1 min-w-0 flex flex-col gap-2">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <div className="font-semibold tracking-tight truncate">{c.bounty.title}</div>
+                          <div className="font-mono text-sm tabular-nums whitespace-nowrap">
+                            {c.bounty.bountyAmount.toLocaleString(undefined, { maximumFractionDigits: 8 })} ZEC
+                          </div>
+                        </div>
+                        <div className="text-xs text-neutral-500 flex flex-wrap gap-x-3 gap-y-1">
+                          <span>{c.bounty.assignees?.length ?? picksList.length} assignees</span>
+                          <span>status: {c.bounty.status}</span>
+                          {c.bounty.categoryId && <span>{c.bounty.categoryId}</span>}
+                          <span>created {new Date(c.bounty.dateCreated).toLocaleDateString()}</span>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs">
+                          <span className="text-neutral-500">Pay to:</span>
+                          <select
+                            value={chosen}
+                            onChange={(e) => setPick(c.bounty.id, e.target.value)}
+                            className="flex-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1 text-xs"
+                          >
+                            <option value="">Choose a payee</option>
+                            {picksList.map((p) => (
+                              <option key={p.userId} value={p.userId}>
+                                {p.name} ({p.z_address.slice(0, 12)}...{p.z_address.slice(-6)})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {chosen && (
+                          <div className="font-mono text-[10px] text-neutral-400 truncate">
+                            {picksList.find((p) => p.userId === chosen)?.z_address}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {selected.size > 0 && (
         <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900/40 p-4 flex flex-col gap-4">

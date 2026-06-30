@@ -10,6 +10,6 @@ export async function POST(
 ) {
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
-  setPrimaryKey(params.id);
+  await setPrimaryKey(params.id);
   return NextResponse.json({ ok: true });
 }

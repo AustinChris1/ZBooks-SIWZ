@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
-  return NextResponse.json({ payees: listPayees() });
+  return NextResponse.json({ payees: await listPayees() });
 }
 
 export async function POST(req: Request) {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const payee = addPayee({ label, address, notes, by: auth.address });
+    const payee = await addPayee({ label, address, notes, by: auth.address });
     return NextResponse.json({ payee });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 409 });

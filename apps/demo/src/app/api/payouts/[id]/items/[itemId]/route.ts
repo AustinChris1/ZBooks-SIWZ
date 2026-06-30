@@ -51,13 +51,13 @@ export async function PATCH(
         }
       }
       const txid = typeof body.txid === "string" ? body.txid : undefined;
-      return NextResponse.json({ item: markLineItemPaid(params.itemId, { txid }) });
+      return NextResponse.json({ item: await markLineItemPaid(params.itemId, { txid }) });
     }
     if (body.action === "mark_unpaid") {
-      return NextResponse.json({ item: setLineItemPayStatus(params.itemId, "unpaid") });
+      return NextResponse.json({ item: await setLineItemPayStatus(params.itemId, "unpaid") });
     }
     if (body.action === "mark_failed") {
-      return NextResponse.json({ item: setLineItemPayStatus(params.itemId, "failed") });
+      return NextResponse.json({ item: await setLineItemPayStatus(params.itemId, "failed") });
     }
 
     const patch: {
@@ -80,7 +80,7 @@ export async function PATCH(
     if (body.workStatus === "completed" || body.workStatus === "in_progress") {
       patch.work_status = body.workStatus;
     }
-    return NextResponse.json({ item: updateLineItem(params.itemId, patch) });
+    return NextResponse.json({ item: await updateLineItem(params.itemId, patch) });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 404 });
   }
@@ -92,6 +92,6 @@ export async function DELETE(
 ) {
   const auth = await requireRole("admin", "treasurer");
   if (!auth.ok) return NextResponse.json({ error: "forbidden" }, { status: auth.status });
-  removeLineItem(params.itemId);
+  await removeLineItem(params.itemId);
   return NextResponse.json({ ok: true });
 }

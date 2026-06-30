@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await requireRole("admin", "treasurer", "viewer");
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
-  return NextResponse.json({ counterparties: listCounterparties() });
+  return NextResponse.json({ counterparties: await listCounterparties() });
 }
 
 export async function POST(req: Request) {
@@ -30,6 +30,6 @@ export async function POST(req: Request) {
   if (!address) return NextResponse.json({ error: "address required" }, { status: 400 });
   if (label.length > 80) return NextResponse.json({ error: "label too long" }, { status: 400 });
 
-  const cp = upsertCounterparty({ address, label, notes, by: auth.address });
+  const cp = await upsertCounterparty({ address, label, notes, by: auth.address });
   return NextResponse.json({ counterparty: cp });
 }
