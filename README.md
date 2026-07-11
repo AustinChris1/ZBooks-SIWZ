@@ -3,15 +3,15 @@
 > Non-custodial accounting and structured batch payouts for Zcash teams.
 > Built on SIWZ, a Zcash-native auth primitive also shipped in this repo.
 
-**Live:** [zecbooks.vercel.app](https://zecbooks.vercel.app) · **Track:** Accounting · **License:** MIT
+**Live:** [zecbooks.vercel.app](https://zecbooks.vercel.app)  
+**Track:** Accounting  
+**License:** MIT
 
 ---
 
-> "There are multiple people involved to put through payments."
->
-> Squirrel, ZecHub
+ZBooks solves a real problem for Zcash teams and DAOs. Treasurers currently paste txids into spreadsheets, try to remember what each payment was for, and pay contributors one by one. There is no clean audit trail and no good way to require multiple approvals before money leaves the treasury.
 
-That is how a real Zcash DAO handles payouts today: spreadsheets and Discord threads. ZBooks turns it into structured, HMAC-bound, auditable approval governance. Read-only viewing keys, mainnet ZIP 321 payments, full audit trail, M-of-N treasurer approvals, optional Discord notifications. The treasurer's wallet signs. ZBooks never holds a spending key.
+ZBooks fixes that. It reads the treasury through a Unified Full Viewing Key, lets you tag transactions, generates proper reports, and turns payouts into a structured process with multi-approval before anything hits the chain. The treasurer's own wallet signs every payment. ZBooks never holds spending keys.
 
 ## What it does
 
@@ -42,14 +42,15 @@ Open [http://localhost:3000](http://localhost:3000). With `SIWZ_DEMO=1` (the def
 
 ## How it uses the Zcash network
 
-ZBooks talks to Zcash mainnet through six mechanisms:
+ZBooks talks to Zcash mainnet through these mechanisms:
 
 1. **Memo-challenge authentication (ZIP 321).** Users send a tiny shielded payment with a one-time memo. The on-chain transaction itself proves address control. Spending key never reaches the app.
-2. **Multi-recipient ZIP 321 payouts.** Each payout run becomes one shielded transaction the treasurer signs in their own wallet (YWallet or ZODL). Single-recipient wallets (Zingo, Cake, Brave) fall back to per-line payment via copy-paste.
-3. **Unified Full Viewing Key accounting (ZIP-316).** Read-only history pulled from the treasury's UFVK. Audit, categorise, report. UFVKs are encrypted at rest (AES-256-GCM, key derived from `NEXTAUTH_SECRET` via HKDF-SHA256).
-4. **Light client via lightwalletd.** A Node wrapper on a $3/mo VPS runs `zingo-cli` in lite mode (~50 MB) and talks to public lightwalletd mirrors (`zec.rocks` + EU/NA failovers). No full Zcash node required.
-5. **M-of-N approval gate.** Each payout requires the configured threshold of treasurer approvals via SIWZ identity before the ZIP 321 URI is revealed. HMAC-bound to the payable item set so edits invalidate older approvals. Designed to absorb FROST signing when wallet support matures.
-6. **Auto-reconciliation against the treasury UFVK.** ZBooks polls the wallet after broadcast. As the multi-recipient transaction confirms on chain, line items flip to paid automatically and the outgoing tx posts into the books as a contractor expense.
+2. **Multi-recipient ZIP 321 payouts.** Each payout run becomes one shielded transaction the treasurer signs in their own wallet (YWallet or ZODL preferred). Single-recipient wallets fall back to per-line payment.
+3. **Unified Full Viewing Key accounting (ZIP 316).** Read-only history pulled from the treasury's UFVK. Audit, categorise, report. UFVKs are encrypted at rest (AES-256-GCM, key derived from `NEXTAUTH_SECRET` via HKDF-SHA256).
+4. **Fee estimation (ZIP 317).** Pre-flight check compares treasury spendable balance against the total payout plus estimated network fee before showing the payment QR.
+5. **Light client via lightwalletd.** A Node wrapper on a VPS runs `zingo-cli` in lite mode and talks to public lightwalletd mirrors (`zec.rocks` + EU/NA failovers). No full Zcash node required.
+6. **M-of-N approval gate.** Each payout requires the configured threshold of treasurer approvals via SIWZ identity before the ZIP 321 URI is revealed. HMAC-bound to the payable item set so edits invalidate older approvals. Designed to absorb FROST signing when wallet support matures.
+7. **Auto-reconciliation against the treasury UFVK.** ZBooks polls the wallet after broadcast. As the multi-recipient transaction confirms on chain, line items flip to paid automatically and the outgoing tx posts into the books as a contractor expense.
 
 Full architecture in [`docs/zbooks/architecture.md`](./docs/zbooks/architecture.md).
 
@@ -80,9 +81,17 @@ npm i @siwz/core @siwz/react @siwz/next-auth
 - **`@siwz/react`**: components and hooks (`<MemoSignIn />`, `<SignInWithZcash />`, `<SignOut />`, `useSiwz()`).
 - **`@siwz/next-auth`**: NextAuth credentials provider, stateless HMAC nonces, optional JWT export for non-Next.js backends (Express, FastAPI, Laravel, Phoenix, raw Lambda).
 
-Landing site: [siwz.vercel.app](https://siwz.vercel.app). Public repo: [github.com/AustinChris1/SIWZ](https://github.com/AustinChris1/SIWZ). Design rationale and protocol spec live in [`docs/siwz/`](./docs/siwz/).
+Landing site: [siwz.vercel.app](https://siwz.vercel.app). Design rationale and protocol spec live in [`docs/siwz/`](./docs/siwz/).
 
-The memo-challenge flow is inspired by [zcashnames](https://zcashnames.com). A tiny on-chain payment with a unique memo IS the authentication. Works with every shielded Zcash wallet that supports ZIP 321 because it only relies on sending a normal payment. Cost per sign-in is dust paid by the user (well under a cent). No `signmessage` required.
+The memo-challenge flow is inspired by **zcashnames.com**. When I tried purchasing a name, I saw how they authenticate ownership: the user sends a small shielded payment with a unique memo/passcode, and the service scans the chain to verify it. That payment itself becomes the proof of address control.
+
+SIWZ uses the same proven pattern. A tiny on-chain payment with a unique nonce in the memo **is** the authentication. It works with every shielded Zcash wallet that supports ZIP 321 because it only relies on sending a normal payment. Cost per sign-in is dust paid by the user (well under a cent). No `signmessage` required.
+
+
+SIWZ actually supports **three sign-in methods** so users can choose whatever works best for their wallet:
+- Memo-challenge (the universal one)
+- Signed message paste
+- MetaMask + ChainSafe Zcash Snap
 
 ## Status
 
