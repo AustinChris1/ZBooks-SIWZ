@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export default async function ApprovalsSettingsPage() {
   const user = await currentUser();
   if (!user) redirect("/");
-  if (!canManageTeam(user.role)) redirect("/payouts");
+  // Viewers see the policy in read-only mode; only admins can edit.
+  const canEdit = canManageTeam(user.role);
 
   const [settings, team] = await Promise.all([getWorkspaceSettings(), listMembers()]);
   const candidates = team.filter((m) => m.role === "admin" || m.role === "treasurer");
@@ -39,6 +40,7 @@ export default async function ApprovalsSettingsPage() {
           approverAddresses: settings.approver_addresses,
         }}
         candidates={candidates.map((m) => ({ address: m.address, role: m.role }))}
+        canEdit={canEdit}
       />
     </div>
   );

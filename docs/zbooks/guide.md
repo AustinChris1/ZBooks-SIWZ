@@ -18,7 +18,7 @@ payout run's source).
 | `/` | Landing and sign-in | The three sign-in flows (paid memo, pasted signature, MetaMask snap) | Public |
 | `/keys` | Manage viewing keys | Each watched UFVK with sync status, tx count, last sync, birthday, primary flag | All see; admin/treasurer add, remove, rename, sync, set primary |
 | `/transactions` | The ledger | Every synced transaction across all wallets: date, direction, amount, memo/counterparty, which wallet (Key), category, notes. Filters: search, wallet, direction, category (including Untagged only) | All see; admin/treasurer tag and add notes inline |
-| `/payouts` | Pay contributors | Payees and payout runs; create a run, add line items, pre-flight balance check, batch QR, reconcile. Includes an **Import from ZecBounties** button that pulls completed bounties from `bounties.zechub.wiki` directly into a draft run, with network detection so on-testnet bounties can't be scheduled on a mainnet deployment. | Admin and treasurer only; viewers are redirected and the nav link is hidden |
+| `/payouts` | Pay contributors | Payees and payout runs; create a run, add line items, pre-flight balance check, batch QR, reconcile. Includes an **Import from ZecBounties** button that pulls completed bounties from `bounties.zechub.wiki` directly into a draft run, with network detection so on-testnet bounties can't be scheduled on a mainnet deployment. | All see runs, line items, approval progress, and audit; only admin/treasurer create runs, edit lines, approve, or reveal the payment URI. |
 | `/payouts/sources/zec-bounties` | Bounty import preview | Live list of `DONE`+`isApproved`+`unpaid` bounties from zec-bounties' public API. Selection, payable/off-network split, target = new run or append to existing draft | Admin and treasurer only |
 | `/reports` | Accounting output | Monthly P&L (ZEC and USD), inflow/outflow/net KPIs, charts, top contractors, CSV export shaped for QuickBooks/Xero | All roles |
 | `/counterparties` (Contacts) | Name addresses | Saved address labels and unlabelled addresses by activity; a label renders everywhere | All see; admin/treasurer edit |
@@ -33,8 +33,10 @@ payout run's source).
 | View transactions, reports, contacts, audit, keys | yes | yes | yes |
 | Tag transactions, edit contacts | no | yes | yes |
 | Add / remove / rename / sync viewing keys | no | yes | yes |
-| See and run payouts | no | yes | yes |
+| See payout runs, line items, approval status | yes (read-only) | yes | yes |
+| Create runs, edit lines, approve, reveal payment URI | no | yes | yes |
 | Approve a payout run | no | yes (if on allowlist) | yes (if on allowlist) |
+| View approval policy on `/settings/approvals` | yes (read-only) | yes (read-only) | yes |
 | Manage team, roles, approval policy | no | no | yes |
 
 First sign-in becomes admin on a fresh instance. With `SIWZ_ADMIN_ADDRESSES`
@@ -56,9 +58,11 @@ viewing keys. See [security.md](../security.md#ufvk-encryption-at-rest) for the
 storage format and key-rotation caveats.
 
 ### Using ZBooks as a viewer
-You can read everything except payouts. Browse `/transactions`, filter and search,
-open `/reports` for the P&L and download the CSV, and check `/audit` to see who
-categorised what. You cannot change anything; ask a treasurer or admin for edits.
+You can read everything. Browse `/transactions`, filter and search, open `/reports`
+for the P&L and download the CSV, and check `/audit` to see who categorised what.
+On `/payouts` you can browse runs, line items, approval progress, and the audit
+trail, but write actions (create a run, edit a line, approve, reveal the payment
+URI) are hidden. On `/settings/approvals` the M-of-N policy is read-only.
 
 ### Using ZBooks as a treasurer
 You run the books day to day. Add the treasury's viewing key on `/keys` and sync

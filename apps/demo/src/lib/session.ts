@@ -32,8 +32,21 @@ export function canManageTeam(role: Role): boolean {
   return role === "admin";
 }
 
-// Payouts are a treasury surface: viewers don't see the page, API, or nav link.
-export function canSeePayouts(role: Role): boolean {
+// Viewers can browse payout runs, line items, approvals, and audit history.
+// Only admins/treasurers can create runs, edit items, approve, or reveal the URI.
+export function canSeePayouts(_role: Role): boolean {
+  return true;
+}
+
+// Gate every write action on the payout surface (create, edit, delete, approve).
+export function canManagePayouts(role: Role): boolean {
+  return role === "admin" || role === "treasurer";
+}
+
+// Gate the ZIP 321 URI / QR reveal. Viewers must never see the URI because a
+// treasurer could accidentally pay from their wallet if it renders on screen
+// during a demo, and a viewer scanning would just lose their own funds.
+export function canRevealPayoutURI(role: Role): boolean {
   return role === "admin" || role === "treasurer";
 }
 

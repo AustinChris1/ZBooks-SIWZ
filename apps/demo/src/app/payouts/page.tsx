@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { listKeys, listPayees, listRuns } from "@/lib/db";
-import { canSeePayouts, canTag, currentUser } from "@/lib/session";
+import { canManagePayouts, currentUser } from "@/lib/session";
 import { Pagination, parsePageParam } from "@/components/Pagination";
 import { NewRunForm } from "./NewRunForm";
 import { PayeesManager } from "./PayeesManager";
@@ -28,12 +28,12 @@ export default async function PayoutsPage({
 }) {
   const user = await currentUser();
   if (!user) redirect("/");
-  if (!canSeePayouts(user.role)) redirect("/transactions");
+  // Viewers can browse runs and line items. Write actions are gated below.
 
   const runs = await listRuns();
   const payees = await listPayees();
   const keys = (await listKeys()).map((k) => ({ id: k.id, label: k.label, primary: k.primary }));
-  const canEdit = canTag(user.role);
+  const canEdit = canManagePayouts(user.role);
 
   const page = parsePageParam(searchParams?.page);
   const totalRuns = runs.length;

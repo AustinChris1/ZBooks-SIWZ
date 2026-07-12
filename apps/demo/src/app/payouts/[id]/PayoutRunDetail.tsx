@@ -261,6 +261,7 @@ export function PayoutRunDetail({
         <ApprovalsPanel
           approvals={preflight.approvals}
           currentUserAddress={currentUserAddress}
+          canApprove={canEdit}
           disabled={isPending}
           onApprove={approve}
           onRevoke={revokeApproval}
@@ -479,19 +480,21 @@ function PreflightBanner({
 function ApprovalsPanel({
   approvals,
   currentUserAddress,
+  canApprove,
   disabled,
   onApprove,
   onRevoke,
 }: {
   approvals: ApprovalsView;
   currentUserAddress: string;
+  canApprove: boolean;
   disabled: boolean;
   onApprove: (comment: string) => void;
   onRevoke: () => void;
 }) {
   const [comment, setComment] = useState("");
   const allowlistOn = approvals.approvers.length > 0;
-  const eligible = !allowlistOn || approvals.approvers.includes(currentUserAddress);
+  const eligible = canApprove && (!allowlistOn || approvals.approvers.includes(currentUserAddress));
   const mine = approvals.valid.find((a) => a.approver_address === currentUserAddress);
   const pct = Math.min(100, Math.round((approvals.validCount / Math.max(1, approvals.required)) * 100));
 
@@ -560,7 +563,11 @@ function ApprovalsPanel({
         </ul>
       )}
 
-      {!eligible ? (
+      {!canApprove ? (
+        <p className="text-xs text-neutral-500">
+          Viewer role. Only treasurers and admins can approve payouts.
+        </p>
+      ) : !eligible ? (
         <p className="text-xs text-neutral-500">
           You are not on the approver allowlist. Ask an admin to add your address on{" "}
           <Link href="/settings/approvals" className="underline">Settings → Approvals</Link>.

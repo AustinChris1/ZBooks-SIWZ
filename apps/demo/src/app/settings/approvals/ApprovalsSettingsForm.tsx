@@ -18,9 +18,11 @@ interface Candidate {
 export function ApprovalsSettingsForm({
   current,
   candidates,
+  canEdit,
 }: {
   current: Settings;
   candidates: Candidate[];
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -74,7 +76,8 @@ export function ApprovalsSettingsForm({
             min={1}
             value={min}
             onChange={(e) => setMin(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
-            className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2.5 py-1.5 font-mono"
+            disabled={!canEdit}
+            className="rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2.5 py-1.5 font-mono disabled:opacity-60"
           />
         </label>
         <p className="text-xs text-neutral-500 leading-relaxed">
@@ -100,12 +103,13 @@ export function ApprovalsSettingsForm({
           <ul className="flex flex-col gap-1.5">
             {candidates.map((c) => (
               <li key={c.address}>
-                <label className="flex items-center gap-2.5 cursor-pointer text-sm">
+                <label className={`flex items-center gap-2.5 text-sm ${canEdit ? "cursor-pointer" : "cursor-default"}`}>
                   <input
                     type="checkbox"
                     checked={selected.has(c.address)}
                     onChange={() => toggle(c.address)}
-                    className="accent-zcash-yellow"
+                    disabled={!canEdit}
+                    className="accent-zcash-yellow disabled:opacity-60"
                   />
                   <code className="font-mono text-xs">{shortenMiddle(c.address)}</code>
                   <span className="text-[10px] uppercase tracking-wide text-neutral-500">
@@ -124,15 +128,21 @@ export function ApprovalsSettingsForm({
         )}
       </section>
 
-      <div className="flex justify-end">
-        <button
-          onClick={save}
-          disabled={isPending}
-          className="text-sm rounded-md bg-zcash-yellow text-zcash-dark font-semibold px-4 py-2 hover:bg-yellow-400 transition-colors disabled:opacity-50"
-        >
-          {isPending ? "Saving…" : "Save policy"}
-        </button>
-      </div>
+      {canEdit ? (
+        <div className="flex justify-end">
+          <button
+            onClick={save}
+            disabled={isPending}
+            className="text-sm rounded-md bg-zcash-yellow text-zcash-dark font-semibold px-4 py-2 hover:bg-yellow-400 transition-colors disabled:opacity-50"
+          >
+            {isPending ? "Saving…" : "Save policy"}
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs text-neutral-500 text-right">
+          Read-only. Only admins can edit the approval policy.
+        </p>
+      )}
     </div>
   );
 }
