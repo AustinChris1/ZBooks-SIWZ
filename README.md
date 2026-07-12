@@ -3,7 +3,8 @@
 > Non-custodial accounting and structured batch payouts for Zcash teams.
 > Built on SIWZ, a Zcash-native auth primitive also shipped in this repo.
 
-**Live:** [zecbooks.vercel.app](https://zecbooks.vercel.app)  
+**Live:** [zecbooks.vercel.app](https://zecbooks.vercel.app)
+**Demo:** [Youtube](https://youtu.be/An8s-ca0ZxQ?si=dtTzs4Ozo5MCz4cQ)
 **Track:** Accounting  
 **License:** MIT
 
