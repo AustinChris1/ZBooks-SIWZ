@@ -6,7 +6,6 @@
 **Live:** [zecbooks.vercel.app](https://zecbooks.vercel.app)
 **Demo:** [Youtube](https://youtu.be/An8s-ca0ZxQ?si=dtTzs4Ozo5MCz4cQ)
 **Track:** Accounting  
-**License:** MIT
 
 ---
 
