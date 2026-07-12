@@ -12,7 +12,12 @@ export interface ZecBountyUser {
   name?: string;
   email?: string | null;
   avatar?: string | null;
+  // Legacy field. In current data this is often null or a testnet UA
+  // (utest1...). Kept for compatibility; UA_address is now the primary.
   z_address?: string | null;
+  // Modern field. Mainnet Unified Address (u1...). Populated for most
+  // contributors even when z_address is null.
+  UA_address?: string | null;
   role?: string | null;
 }
 
@@ -46,10 +51,18 @@ export interface ZecBounty {
   createdByUser?: ZecBountyUser | null;
 }
 
+/** Any usable Zcash address anywhere on this user (regardless of network). */
+function userHasAnyAddress(user: ZecBountyUser | null | undefined): boolean {
+  return !!(user?.UA_address || user?.z_address);
+}
+
 /** Resolve the assignee for payout purposes. Returns the single assignee user
- *  when there is exactly one, "multi" if there are more, or null if none. */
+ *  when there is exactly one, "multi" if there are more, or null if none.
+ *  "Usable" means the user has any Zcash address on file (UA_address or
+ *  z_address); the network match is checked separately by callers via
+ *  pickAddressForNetwork. */
 export function resolveAssignee(bounty: ZecBounty): ZecBountyUser | "multi" | null {
-  if (bounty.assigneeUser?.z_address) return bounty.assigneeUser;
+  if (userHasAnyAddress(bounty.assigneeUser)) return bounty.assigneeUser!;
   const list = bounty.assignees ?? [];
   if (list.length === 0) return bounty.assigneeUser ?? null;
   if (list.length > 1) return "multi";
@@ -120,18 +133,39 @@ export async function fetchAllBounties(): Promise<ZecBounty[]> {
  *  which surfaces them with `pickableAssignees`. We do NOT gate on upstream
  *  `isApproved`: that flag is inconsistent. ZBooks's own M-of-N approval gate
  *  is the real authorisation, applied by the treasurer at payout time. */
-export function filterPayableBounties(bounties: ZecBounty[]): ZecBounty[] {
+export function filterPayableBounties(
+  bounties: ZecBounty[],
+  network: "mainnet" | "testnet" | "regtest",
+): ZecBounty[] {
   return bounties.filter((b) => {
     if (b.status === "CANCELLED" || b.status === "TO_DO") return false;
     if (b.isPaid) return false;
     if (!(b.bountyAmount > 0)) return false;
     const assignee = resolveAssignee(b);
     if (assignee === null || assignee === "multi") return false;
-    return !!assignee.z_address;
+    return !!pickAddressForNetwork(assignee, network);
   });
 }
 
 export type ZcashNetwork = "mainnet" | "testnet" | "regtest" | "unknown";
+
+/** Return the address on this user that matches the target network. Prefers
+ *  UA_address over the legacy z_address because most contributors on
+ *  zec-bounties have their mainnet payout address in UA_address and either
+ *  null or a testnet address in z_address. */
+export function pickAddressForNetwork(
+  user: ZecBountyUser | null | undefined,
+  target: "mainnet" | "testnet" | "regtest",
+): string | null {
+  if (!user) return null;
+  const candidates = [user.UA_address, user.z_address].filter(
+    (s): s is string => typeof s === "string" && s.length > 0,
+  );
+  for (const addr of candidates) {
+    if (detectAddressNetwork(addr) === target) return addr;
+  }
+  return null;
+}
 
 /** Detect network from a Zcash address prefix (UA, sapling, transparent). */
 export function detectAddressNetwork(address: string): ZcashNetwork {
@@ -179,6 +213,10 @@ export interface BountyImportCandidate {
   payable: boolean;
   reason: BountyBlockReason;
   reasonLabel: string;
+  /** The address ZBooks would actually pay when this bounty imports. Set on
+   *  payable candidates (matches the target network, UA_address preferred).
+   *  Undefined for blocked or pickable candidates. */
+  payoutAddress?: string;
   /** Present when the bounty has multiple assignees with at least one having
    *  a z_address. The UI shows a picker; once a pick is made the bounty
    *  becomes payable in the treasurer's selection. */
@@ -192,8 +230,23 @@ export function buildImportCandidates(
 ): BountyImportCandidate[] {
   return bounties.map((bounty) => {
     const assignee = resolveAssignee(bounty);
-    const address = assignee && assignee !== "multi" ? assignee.z_address ?? "" : "";
-    const network = detectAddressNetwork(address);
+    // Pick the address on the assignee that matches the target network,
+    // preferring UA_address over z_address.
+    const address =
+      assignee && assignee !== "multi"
+        ? pickAddressForNetwork(assignee, zbooksNetwork) ?? ""
+        : "";
+    // For display, report the network of whichever address the assignee has
+    // (falls back to the wrong-network one so the label can explain).
+    const anyAssigneeAddr =
+      assignee && assignee !== "multi"
+        ? assignee.UA_address || assignee.z_address || ""
+        : "";
+    const network: ZcashNetwork = address
+      ? zbooksNetwork
+      : anyAssigneeAddr
+      ? detectAddressNetwork(anyAssigneeAddr)
+      : "unknown";
 
     let reason: BountyBlockReason = "payable";
     let reasonLabel = "Ready to pay";
@@ -209,24 +262,27 @@ export function buildImportCandidates(
       reason = "already_paid";
       reasonLabel = "Already paid on zec-bounties";
     } else if (assignee === "multi") {
-      // Multi-assignee: collect each assignee with a usable address; expose
-      // them for the UI picker. The treasurer chooses one before importing.
+      // Multi-assignee: collect each assignee with a usable address on our
+      // network. Prefers UA_address over z_address if either is present on
+      // the nested user. Note: the /api/bounties response typically returns
+      // only {id, name, avatar} inside assignees[].user, so this branch
+      // usually yields no picks and falls back to multi_assignee. Kept
+      // defensively in case the upstream API starts including addresses.
       const picks: PickableAssignee[] = [];
       for (const a of bounty.assignees ?? []) {
-        const addr = a.user?.z_address ?? "";
-        if (!a.user || !a.userId || !addr) continue;
-        const net = detectAddressNetwork(addr);
-        if (net !== zbooksNetwork) continue;
+        if (!a.user || !a.userId) continue;
+        const addr = pickAddressForNetwork(a.user, zbooksNetwork);
+        if (!addr) continue;
         picks.push({
           userId: a.userId,
           name: a.user.name ?? a.userId.slice(0, 8),
           z_address: addr,
-          network: net,
+          network: zbooksNetwork,
         });
       }
       if (picks.length === 0) {
         reason = "multi_assignee";
-        reasonLabel = `Multiple assignees, none with a ${zbooksNetwork} address on file.`;
+        reasonLabel = `Multiple assignees, none resolvable to a ${zbooksNetwork} address (zec-bounties does not expose per-assignee addresses in this API response).`;
       } else {
         reason = "needs_assignee_pick";
         reasonLabel = `Multiple assignees (${bounty.assignees?.length ?? picks.length}). Pick a payee to import.`;
@@ -235,18 +291,24 @@ export function buildImportCandidates(
     } else if (assignee === null) {
       reason = "no_assignee";
       reasonLabel = "No assignee set";
-    } else if (!address) {
+    } else if (!userHasAnyAddress(assignee)) {
       reason = "no_address";
-      reasonLabel = "Assignee has no z_address on file";
+      reasonLabel = "Assignee has no address on file (neither UA_address nor z_address).";
+    } else if (!address) {
+      // Assignee has an address, just not on our target network.
+      const nets = [assignee.UA_address, assignee.z_address]
+        .filter((s): s is string => typeof s === "string" && !!s)
+        .map(detectAddressNetwork)
+        .filter((n) => n !== "unknown");
+      const uniqNets = Array.from(new Set(nets));
+      reason = uniqNets.length === 0 ? "address_unknown" : "network_mismatch";
+      reasonLabel =
+        uniqNets.length === 0
+          ? "Address prefix not recognised"
+          : `Assignee has ${uniqNets.join("/")} address(es); this ZBooks runs on ${zbooksNetwork}.`;
     } else if (!(bounty.bountyAmount > 0)) {
       reason = "amount_zero";
       reasonLabel = "Amount is zero";
-    } else if (network === "unknown") {
-      reason = "address_unknown";
-      reasonLabel = "Address prefix not recognised";
-    } else if (network !== zbooksNetwork) {
-      reason = "network_mismatch";
-      reasonLabel = `On ${network}, this ZBooks runs on ${zbooksNetwork}`;
     }
 
     return {
@@ -255,6 +317,7 @@ export function buildImportCandidates(
       payable: reason === "payable",
       reason,
       reasonLabel,
+      ...(reason === "payable" && address ? { payoutAddress: address } : {}),
       ...(pickableAssignees ? { pickableAssignees } : {}),
     };
   });
@@ -262,9 +325,12 @@ export function buildImportCandidates(
 
 /** Shape a bounty into the fields ZBooks's payout_items table needs. Pass
  *  `overrideAssigneeUserId` to pick a specific payee from a multi-assignee
- *  bounty (the userId must be present in `bounty.assignees[]`). */
+ *  bounty (the userId must be present in `bounty.assignees[]`). The `network`
+ *  arg controls which address on the assignee is used (UA_address preferred
+ *  when it matches, falling back to z_address). */
 export function bountyToPayoutLine(
   bounty: ZecBounty,
+  network: "mainnet" | "testnet" | "regtest",
   overrideAssigneeUserId?: string,
 ): {
   label: string;
@@ -274,12 +340,15 @@ export function bountyToPayoutLine(
   external_ref: string;
 } {
   const assignee = getEffectiveAssignee(bounty, overrideAssigneeUserId);
-  if (!assignee?.z_address) {
-    throw new Error(`bountyToPayoutLine: bounty ${bounty.id} has no resolvable assignee with a z_address`);
+  const address = pickAddressForNetwork(assignee, network);
+  if (!address) {
+    throw new Error(
+      `bountyToPayoutLine: bounty ${bounty.id} has no resolvable assignee with a ${network} address`,
+    );
   }
   return {
-    label: assignee.name ? `${assignee.name}: ${bounty.title}` : bounty.title,
-    address: assignee.z_address,
+    label: assignee?.name ? `${assignee.name}: ${bounty.title}` : bounty.title,
+    address,
     amount_zec: bounty.bountyAmount,
     memo: `zec-bounty: ${bounty.title}`.slice(0, 512),
     external_ref: `zec-bounties:${bounty.id}`,

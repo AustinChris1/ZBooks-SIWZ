@@ -3,9 +3,9 @@ import { addLineItem, createRun, findExistingExternalRefs } from "@/lib/db";
 import { requireRole } from "@/lib/session";
 import {
   bountyToPayoutLine,
-  detectAddressNetwork,
   fetchAllBounties,
   getEffectiveAssignee,
+  pickAddressForNetwork,
   type ZecBounty,
 } from "@/lib/zec-bounties";
 import { SIWZ_NETWORK } from "@/lib/auth";
@@ -85,21 +85,27 @@ export async function POST(req: Request) {
       continue;
     }
     const assignee = getEffectiveAssignee(b, overrides[id]);
-    if (!assignee?.z_address) {
+    if (!assignee) {
       skipped.push({
         id,
         reason: overrides[id]
-          ? "Picked assignee has no z_address on file"
+          ? "Picked assignee not found on bounty"
           : "No assignee, or multi-assignee without a pick selected",
       });
       continue;
     }
-    const net = detectAddressNetwork(assignee.z_address);
-    if (net !== SIWZ_NETWORK) {
-      skipped.push({ id, reason: `${net} address, this ZBooks runs on ${SIWZ_NETWORK}` });
+    const address = pickAddressForNetwork(assignee, SIWZ_NETWORK);
+    if (!address) {
+      const hasAny = !!(assignee.UA_address || assignee.z_address);
+      skipped.push({
+        id,
+        reason: hasAny
+          ? `Assignee has no ${SIWZ_NETWORK} address; ZBooks runs on ${SIWZ_NETWORK}`
+          : "Assignee has no address on file",
+      });
       continue;
     }
-    resolved.push({ bounty: b, address: assignee.z_address });
+    resolved.push({ bounty: b, address });
   }
 
   // Dedupe against payout_items.external_ref
@@ -135,7 +141,7 @@ export async function POST(req: Request) {
 
   let added = 0;
   for (const r of fresh) {
-    const line = bountyToPayoutLine(r.bounty, overrides[r.bounty.id]);
+    const line = bountyToPayoutLine(r.bounty, SIWZ_NETWORK, overrides[r.bounty.id]);
     try {
       await addLineItem(runId, {
         label: line.label,

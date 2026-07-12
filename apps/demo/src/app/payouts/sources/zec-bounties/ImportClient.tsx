@@ -40,7 +40,7 @@ const REASON_HEADING: Record<BountyBlockReason, string> = {
   already_paid: "Already paid upstream",
   multi_assignee: "Multiple assignees, none with a usable address",
   no_assignee: "No assignee set",
-  no_address: "Assignee has no z_address",
+  no_address: "Assignee has no address on file",
   amount_zero: "Amount is zero",
   network_mismatch: "Wrong network",
   address_unknown: "Unrecognised address format",
@@ -50,7 +50,12 @@ const REASON_HEADING: Record<BountyBlockReason, string> = {
 function displayAssignee(c: BountyImportCandidate): { name: string; address?: string } {
   const auto = resolveAssignee(c.bounty);
   if (auto && auto !== "multi") {
-    return { name: auto.name ?? "(no name)", address: auto.z_address ?? undefined };
+    // Prefer the resolved payout address (network-matched) if set, otherwise
+    // fall back to whichever address is present on the user for display.
+    return {
+      name: auto.name ?? "(no name)",
+      address: c.payoutAddress ?? auto.UA_address ?? auto.z_address ?? undefined,
+    };
   }
   return { name: c.bounty.assigneeUser?.name ?? "(unassigned)" };
 }
@@ -458,9 +463,9 @@ export function ImportClient({ payable, pickable, blocked, zbooksNetwork, draftR
                     <div className="text-[11px] text-amber-700 dark:text-amber-400 pt-1">
                       {reasonLabel}
                     </div>
-                    {bounty.assigneeUser?.z_address && (
+                    {(bounty.assigneeUser?.UA_address || bounty.assigneeUser?.z_address) && (
                       <div className="font-mono text-[10px] text-neutral-400 truncate pt-1">
-                        {bounty.assigneeUser.z_address}
+                        {bounty.assigneeUser?.UA_address || bounty.assigneeUser?.z_address}
                       </div>
                     )}
                   </li>
