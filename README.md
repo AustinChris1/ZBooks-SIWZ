@@ -38,8 +38,6 @@ pnpm dev:zbooks
 
 Open [http://localhost:3000](http://localhost:3000). With `SIWZ_DEMO=1` (the default), memo-challenge sign-in completes without a real on-chain payment so you can exercise the flow immediately. Set `SIWZ_DEMO=0` plus a `SIWZ_SERVICE_ADDRESS` you control to wire it to mainnet.
 
-`apps/zecwall` is the minimal SIWZ reference integration (a Zcash-gated comments wall). Live at [zecwall.vercel.app](https://zecwall.vercel.app); run locally with `pnpm --filter @siwz/zecwall dev`.
-
 ## How it uses the Zcash network
 
 ZBooks talks to Zcash mainnet through these mechanisms:
@@ -93,6 +91,8 @@ SIWZ actually supports **three sign-in methods** so users can choose whatever wo
 - Signed message paste
 - MetaMask + ChainSafe Zcash Snap
 
+`apps/zecwall` is the minimal SIWZ reference integration (a Zcash-gated comments wall). Live at [zecwall.vercel.app](https://zecwall.vercel.app); run locally with `pnpm --filter @siwz/zecwall dev`.
+
 ## Status
 
 **Working today:**
@@ -115,4 +115,4 @@ Full roadmap and non-goals in [`docs/siwz/roadmap.md`](./docs/siwz/roadmap.md).
 
 ## License
 
-MIT. Built for the ZecHub hackathon.
+MIT. Built for the ZecHub hackathon 3.0 2026.
