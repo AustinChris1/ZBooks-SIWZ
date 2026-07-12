@@ -79,7 +79,7 @@ function Footer() {
     <footer className="border-t border-neutral-200 dark:border-neutral-800/80">
       <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-neutral-500">
         ZBooks, built for the Zechub hackathon, paired with{" "}
-        <a className="underline hover:text-neutral-700 dark:hover:text-neutral-300" href="https://github.com" target="_blank" rel="noreferrer">
+        <a className="underline hover:text-neutral-700 dark:hover:text-neutral-300" href="https://siwz.vercel.app" target="_blank" rel="noreferrer">
           Sign in with Zcash
         </a>
         . Authentication is non-custodial: we only see signed messages, never keys.
