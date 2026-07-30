@@ -27,16 +27,48 @@ ZBooks fixes that. It reads the treasury through a Unified Full Viewing Key, let
 
 ## Try ZBooks locally
 
+**Requirements**
+
+- Node 20+ and `pnpm`.
+- A Turso database (free tier, no credit card, ~60 seconds to sign up at [turso.tech](https://turso.tech)). ZBooks stores its ledger in libSQL over HTTPS, so a hosted DB URL is required even for local dev.
+- Nothing else. Shielded UFVK sync (via `apps/lightwallet-rpc` on a VPS) and a Zcash daemon are both optional; see [Optional extras](#optional-extras) below.
+
+**Setup**
+
 ```bash
 pnpm install
 cp apps/demo/.env.example apps/demo/.env.local
-# generate a NEXTAUTH_SECRET and paste it into apps/demo/.env.local:
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
 
+Open `apps/demo/.env.local` and fill in three values:
+
+```env
+NEXTAUTH_SECRET=<paste the output of: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))">
+TURSO_DATABASE_URL=libsql://<your-db>.turso.io
+TURSO_AUTH_TOKEN=<your-turso-token>
+```
+
+Everything else in `.env.example` has sane defaults for local dev, including `SIWZ_DEMO=1` which stubs the on-chain memo-challenge check so you can exercise the sign-in flow without spending ZEC.
+
+**Run**
+
+```bash
 pnpm dev:zbooks
 ```
 
-Open [http://localhost:3000](http://localhost:3000). With `SIWZ_DEMO=1` (the default), memo-challenge sign-in completes without a real on-chain payment so you can exercise the flow immediately. Set `SIWZ_DEMO=0` plus a `SIWZ_SERVICE_ADDRESS` you control to wire it to mainnet.
+Open [http://localhost:3000](http://localhost:3000). First sign-in becomes admin. In demo mode, memo-challenge sign-in accepts any transparent Zcash address you type without a real on-chain payment; switch to `SIWZ_DEMO=0` plus a `SIWZ_SERVICE_ADDRESS` you control to wire it to mainnet.
+
+### Optional extras
+
+None of these are needed to see the app running, but they enable specific features:
+
+| Feature | Extra config |
+|---|---|
+| **Shielded UFVK balance sync** | `LIGHTWALLET_RPC_URL` + `LIGHTWALLET_RPC_TOKEN` pointing at your own `apps/lightwallet-rpc` VPS, or `ZCASH_RPC_URL` pointing at zcashd. Without either, shielded balances show "unknown" but everything else works. |
+| **Discord approval notifications** | `DISCORD_WEBHOOK_URL` |
+| **Off-hours ledger sync** | `CRON_SECRET` + an external scheduler hitting `/api/cron/sync-keys` |
+
+Shielded deployment recipe (VPS + `zingo-cli`) in [`docs/siwz/shielded-deployment.md`](./docs/siwz/shielded-deployment.md).
 
 ## How it uses the Zcash network
 

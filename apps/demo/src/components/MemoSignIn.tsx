@@ -40,6 +40,13 @@ export function MemoSignIn() {
   const [forceFreshSignin, setForceFreshSignin] = useState(false);
 
   useEffect(() => {
+    // Warm the memo-challenge functions so the first real click isn't a
+    // 5s cold start. GET returns 405; boot side effect is what we want.
+    void fetch("/api/auth/memo/issue", { method: "GET" }).catch(() => {});
+    void fetch("/api/auth/memo/poll", { method: "GET" }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const saved = window.localStorage.getItem(ANON_STORAGE_KEY);
