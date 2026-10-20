@@ -1,0 +1,12 @@
+version: 2
+
+# packages/siwz-core/vectors holds the published SIWZ domain-key test vectors.
+# Every key in it is derived from the synthetic seed 0x000102...3f and is meant
+# to be public, so wallet implementers can check their derivation against known
+# fixtures. Entropy-based scanners read the hex and base64 fields as secrets.
+# They are not credentials, and nothing there grants access to anything.
+#
+# Regenerate with: cd packages/siwz-core && pnpm build && node scripts/gen-vectors.mjs
+secret:
+  ignored-paths:
+    - packages/siwz-core/vectors/**

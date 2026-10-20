@@ -1,7 +1,13 @@
 # SIWZ domain-key signatures (v1)
 
 Status: draft. Implemented in `@siwz/core`. Test vectors at
-`packages/siwz-core/vectors/siwz-domain-key-v1.json`.
+`packages/siwz-core/vectors/siwz-domain-key-v1.json`, which also ships inside
+the published npm package. Regenerate them with
+`cd packages/siwz-core && pnpm build && pnpm gen-vectors`.
+
+The vectors are derived from the synthetic seed `0x000102…3f` and are meant to
+be public. Entropy-based secret scanners flag their hex and base64 fields; that
+is expected, and `.gitguardian.yaml` excludes the directory.
 
 This specifies an off-chain sign-in signature for Zcash wallets. It needs no
 consensus change, no proving circuit, and no new ZIP before a wallet can ship

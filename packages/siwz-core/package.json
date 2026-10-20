@@ -25,6 +25,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "gen-vectors": "node scripts/gen-vectors.mjs",
     "build": "tsup",
     "prepublishOnly": "pnpm run build",
     "test": "vitest run",
