@@ -237,7 +237,7 @@ describe("message integration", () => {
 
 describe("published test vectors", () => {
   const vectors = JSON.parse(
-    readFileSync(join(__dirname, "vectors", "siwz-domain-key-v1.json"), "utf8"),
+    readFileSync(join(__dirname, "..", "vectors", "siwz-domain-key-v1.json"), "utf8"),
   ) as {
     seedHex: string;
     cases: {

@@ -1,6 +1,6 @@
 {
   "name": "@siwz/core",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Sign in with Zcash core protocol: message format, address parsing, signature verification, JWT export",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,6 +20,7 @@
   },
   "files": [
     "dist",
+    "vectors",
     "README.md",
     "LICENSE"
   ],

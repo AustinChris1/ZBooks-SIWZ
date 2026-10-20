@@ -15,12 +15,20 @@ npm i @siwz/core
 
 ## What this package gives you
 
-Two protocol-level sign-in flows. The third (MetaMask Snap) is handled in [`@siwz/react`](https://www.npmjs.com/package/@siwz/react).
+Three protocol-level sign-in flows. A fourth (MetaMask Snap) is handled in [`@siwz/react`](https://www.npmjs.com/package/@siwz/react).
 
 | Flow | Primitives | When to use |
 |---|---|---|
-| Memo challenge (universal) | `issueMemoChallenge`, `verifyMemoChallenge`, `buildZip321`, `buildZip321Multi`, `parseZip321` | Recommended primary flow. Works with every Zcash wallet via ZIP 321. No `signmessage` support required. |
+| Memo challenge (universal) | `issueMemoChallenge`, `verifyMemoChallenge`, `buildZip321`, `buildZip321Multi`, `parseZip321` | Works with every Zcash wallet via ZIP 321 today. No `signmessage` support required. |
 | Signed message (SIWE-style) | `SiwzMessage`, `verifyMessage`, `verifyTransparentSignature`, `verifySaplingSignature` | For wallets exposing `signmessage` (zcash-cli, YWallet transparent receivers, etc.). |
+| Domain keys (**draft**) | `deriveSiwzDomainKey`, `signSiwzMessage`, `verifySiwzDomainSignature` | The closest thing to SIWE parity. Needs wallet support that does not exist yet. |
+
+> **Domain keys are a draft.** The format is specified in
+> [docs/siwz/domain-keys.md](https://github.com/AustinChris1/ZBooks-SIWZ/blob/main/docs/siwz/domain-keys.md)
+> with test vectors, and is published so wallet teams can review and implement
+> it. No shipping wallet derives these keys yet, so nothing in production should
+> depend on it. The derivation inputs are pinned, and any change to them will be
+> a new version string rather than a silent patch.
 
 ## Memo-challenge sign-in
 

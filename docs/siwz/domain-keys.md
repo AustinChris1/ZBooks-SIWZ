@@ -1,7 +1,7 @@
 # SIWZ domain-key signatures (v1)
 
 Status: draft. Implemented in `@siwz/core`. Test vectors at
-`packages/siwz-core/tests/vectors/siwz-domain-key-v1.json`.
+`packages/siwz-core/vectors/siwz-domain-key-v1.json`.
 
 This specifies an off-chain sign-in signature for Zcash wallets. It needs no
 consensus change, no proving circuit, and no new ZIP before a wallet can ship
@@ -221,7 +221,7 @@ confused with, or substituted for, a spending or viewing key.
 2. Derive `secretKey` with the two personalised BLAKE2b steps above, using the
    64-byte BIP 39 seed and the account index.
 3. Reproduce every case in
-   `packages/siwz-core/tests/vectors/siwz-domain-key-v1.json`. The vectors fix
+   `packages/siwz-core/vectors/siwz-domain-key-v1.json`. The vectors fix
    the seed, so `identity`, `secretKeyHex` and `signatureBase64` must match byte
    for byte.
 4. Show the domain and statement, and make clear that signing moves no funds.
