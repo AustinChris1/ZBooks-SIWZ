@@ -3,6 +3,7 @@ import { parseAddress } from "./address.js";
 import { base64Decode, bytesEqual, hash160, magicHash } from "./crypto.js";
 import { SiwzError } from "./errors.js";
 import { SiwzMessage } from "./message.js";
+import { verifySiwzDomainSignature } from "./domain-key.js";
 import type { ParsedAddress, VerifyResult } from "./types.js";
 
 export interface VerifyOptions {
@@ -170,8 +171,17 @@ export async function verifyMessage(
   const timeErr = msg.checkTimeValidity(opts.now);
   if (timeErr) return failure(timeErr, `message is ${timeErr.toLowerCase().replace("_", " ")}`);
 
-  const parsed = parseAddress(msg.address);
   const wire = typeof message === "string" ? message : msg.toString();
+
+  // Domain-scoped SIWZ identity: the subject is itself the Ed25519 public key,
+  // so verification needs no address parsing and no external verifier.
+  if (msg.subjectType === "siwz-id") {
+    const res = verifySiwzDomainSignature(wire, signatureBase64, msg.address);
+    if (!res.valid) return failure(res.error, res.errorMessage);
+    return { valid: true, address: msg.address, addressType: "siwz-id" };
+  }
+
+  const parsed = parseAddress(msg.address);
 
   switch (parsed.type) {
     case "p2pkh":
@@ -193,6 +203,9 @@ export async function verifyMessage(
         "UNSUPPORTED_ADDRESS_TYPE",
         "P2SH (t3.../t2...) addresses cannot sign messages — they're scripts, not keys.",
       );
+    case "siwz-id":
+      // Unreachable: handled above, before parseAddress runs.
+      return failure("UNSUPPORTED_ADDRESS_TYPE", "SIWZ identities are verified by domain-key signature.");
   }
 }
 

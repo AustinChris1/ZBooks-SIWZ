@@ -16,8 +16,11 @@ export async function POST(req: Request) {
   const fingerprint = typeof body.fingerprint === "string" ? body.fingerprint : "";
   const ufvk = typeof body.ufvk === "string" ? body.ufvk : "";
   if (!ALLOWED_FP.test(fingerprint)) return NextResponse.json({ error: "fingerprint must be hex (8-128)" }, { status: 400 });
-  if (!ufvk.startsWith("uview") && !ufvk.startsWith("uviewtest")) {
-    return NextResponse.json({ error: "ufvk must start with uview... / uviewtest..." }, { status: 400 });
+  // Snap sign-in sends `anon:<fingerprint>`, never a viewing key. Real uview
+  // subjects stay accepted for apps that import a key with explicit consent.
+  const isAnon = ufvk.startsWith("anon:") && ALLOWED_FP.test(ufvk.slice(5));
+  if (!isAnon && !ufvk.startsWith("uview") && !ufvk.startsWith("uviewtest")) {
+    return NextResponse.json({ error: "subject must be anon:<fingerprint> or a uview... key" }, { status: 400 });
   }
   const envelope = createHmac("sha256", secret).update(`${fingerprint}::${ufvk}`).digest("hex");
   return NextResponse.json({ envelope });

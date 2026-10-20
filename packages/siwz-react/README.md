@@ -167,34 +167,44 @@ Two inline reference implementations remain useful when you want to build your o
 
 ## MetaMask Zcash Snap
 
-For accounts using ChainSafe's [Zcash Snap](https://snaps.metamask.io/snap/npm/chainsafe/webzjs-zcash-snap/):
+For accounts using ChainSafe's [Zcash Snap](https://snaps.metamask.io/snap/npm/chainsafe/webzjs-zcash-snap/).
+
+**SIWZ never requests your viewing key.** A UFVK is a permanent, unrevocable read capability over the entire account, and receiving one proves nothing about key control, so it is the wrong credential for sign-in. `snapAuthenticate` instead tries the two paths that produce real, server-verifiable proof:
 
 ```ts
-import {
-  detectSnapEnvironment,
-  snapConnect,
-  type SnapIdentity,
-} from "@siwz/react";
+import { snapAuthenticate } from "@siwz/react";
 
-const env = await detectSnapEnvironment();
-if (env.status === "ready") {
-  const id: SnapIdentity = await snapConnect();
-  // → { fingerprint, ufvk }
+const attempt = await snapAuthenticate({
+  message: siwzChallenge,  // used if the Snap can sign messages
+  zip321Uri: memoChallenge.uri, // used if the Snap can send
+});
+
+switch (attempt.kind) {
+  case "signature": // SIWE parity. Verify attempt.signature server-side.
+  case "payment":   // Memo challenge paid in-wallet. Verify on-chain.
+  case "unsupported": // Fall back to the QR or paste flow.
 }
 ```
 
-Or pass `enableSnap` + `onSnapAuth` to `<SignInWithZcash />` to surface it as a one-click button alongside the address flow.
+1. **`signMessage`** gives exact SIWE parity: the Snap signs the challenge, your server verifies the signature against the address, and nothing is disclosed.
+2. **A send method** lets the Snap pay the memo challenge (dust plus a nonce in the memo) so the user stays inside MetaMask instead of scanning a QR code. Your server still verifies the payment on-chain.
 
-**Heads up:** ChainSafe's published Snap currently restricts RPC calls to `https://webzjs.chainsafe.dev` via `endowment:rpc.allowedOrigins`. Third-party origins are rejected by the Snap manifest until ChainSafe relaxes it or publishes a runtime-prompt variant. Treat Snap as a progressive enhancement, not the primary path. The memo-challenge flow works with every Zcash wallet and has no such restriction.
+**Current status:** the published Snap exposes neither method, so `snapAuthenticate` returns `unsupported` and you should fall back to memo-challenge or paste. It also restricts RPC to `https://webzjs.chainsafe.dev` via `endowment:rpc.allowedOrigins`, so third-party origins are rejected regardless. Both are tracked in [ChainSafe/WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165). The probe caches negative results and needs no code change on your side when either method ships.
+
+Treat Snap as a progressive enhancement. Memo-challenge works with every Zcash wallet today and has none of these constraints.
 
 Helpers exported:
 
 ```ts
 detectSnapEnvironment, requestSnapInstall
-snapConnect, snapGetSeedFingerprint, snapGetViewingKey
+snapAuthenticate, snapSignMessage, snapPayMemoChallenge
+snapConnect, snapGetSeedFingerprint
 findMetaMaskProvider, DEFAULT_SNAP_ID, SnapInvokeError
-type SnapStatus, type SnapIdentity, type SnapErrorCode
+type SnapStatus, type SnapIdentity, type SnapAuthAttempt
+type SnapSignature, type SnapPayment, type SnapErrorCode
 ```
+
+`snapGetViewingKey` is still exported but deprecated. `snapConnect` no longer calls it, and sign-in must not either.
 
 ## Styling
 

@@ -5,7 +5,8 @@ export type AddressType =
   | "p2sh"       // transparent script (t3..., t2...)
   | "sapling"    // shielded z-addr (zs..., ztestsapling...)
   | "orchard"    // orchard receiver (typically only inside unified addresses)
-  | "unified";   // unified address (u1..., utest1...)
+  | "unified"    // unified address (u1..., utest1...)
+  | "siwz-id";   // domain-scoped SIWZ identity (siwz1...), not an on-chain address
 
 export interface ParsedAddress {
   /** Original address string as provided. */

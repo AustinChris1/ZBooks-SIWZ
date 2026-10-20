@@ -1,5 +1,6 @@
 import { SiwzError } from "./errors.js";
 import { parseAddress } from "./address.js";
+import { isSiwzIdentity } from "./domain-key.js";
 import type { Network, SiwzFields } from "./types.js";
 
 const ENC = new TextEncoder();
@@ -85,10 +86,19 @@ export class SiwzMessage implements SiwzFields {
     if (this.statement && /[\r\n]/.test(this.statement)) {
       fail("statement must not contain newlines");
     }
-    const parsed = parseAddress(this.address);
-    if (parsed.network !== this.network) {
-      fail(`Address is on ${parsed.network} but message declares ${this.network}`);
+    // A domain-scoped SIWZ identity carries no network, so only Zcash
+    // addresses get the network cross-check.
+    if (!isSiwzIdentity(this.address)) {
+      const parsed = parseAddress(this.address);
+      if (parsed.network !== this.network) {
+        fail(`Address is on ${parsed.network} but message declares ${this.network}`);
+      }
     }
+  }
+
+  /** Whether the subject line holds a Zcash address or a SIWZ domain-key identity. */
+  get subjectType(): "address" | "siwz-id" {
+    return isSiwzIdentity(this.address) ? "siwz-id" : "address";
   }
 
   toString(): string {

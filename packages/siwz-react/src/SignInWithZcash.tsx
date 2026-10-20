@@ -108,8 +108,8 @@ export function SignInWithZcash(props: SignInWithZcashProps) {
             </p>
           ) : (
             <p className="siwz-help-note">
-              Connecting to the ChainSafe Zcash Snap reads your viewing key
-              (read-only — no spend access). MetaMask will ask you to approve.
+              MetaMask will ask you to approve. Your viewing key is never read and
+              no key leaves your wallet.
             </p>
           )}
           <button

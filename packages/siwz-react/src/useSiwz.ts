@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import { SiwzMessage, isZcashAddress } from "@siwz/core";
 import {
   detectSnapEnvironment,
-  snapConnect,
+  snapAuthenticate,
+  type SnapAuthAttempt,
   type SnapIdentity,
   type SnapStatus,
 } from "./snap.js";
@@ -40,10 +41,22 @@ export interface UseSiwzOptions {
     { ok: true } | { ok: false; error: string }
   >;
   /**
-   * Optional MetaMask Zcash-Snap handler. Receives the Snap identity tuple;
-   * typically forwarded to a separate NextAuth provider.
+   * Optional MetaMask Zcash-Snap handler. Receives the Snap identity, plus the
+   * auth attempt describing what proof the Snap could actually produce.
+   *
+   * On `attempt.kind === "unsupported"` the only credential is MetaMask's own
+   * attestation of a seed fingerprint, which is not cryptographic proof of key
+   * control. Reject it if your app needs a verifiable session.
    */
-  onSnapAuth?: (info: SnapIdentity) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSnapAuth?: (
+    info: SnapIdentity,
+    attempt: SnapAuthAttempt,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * Optional ZIP 321 URI for a pending memo challenge. When set, and once the
+   * Snap ships a send RPC, the Snap pays it directly instead of showing a QR.
+   */
+  snapZip321Uri?: string;
 }
 
 export interface UseSiwzReturn {
@@ -155,12 +168,15 @@ export function useSiwz(opts: UseSiwzOptions): UseSiwzReturn {
       }
       setStatus("fetchingNonce");
       try {
-        const identity = await snapConnect(snapId);
+        // Tries signMessage, then a send method. Both are unavailable in the
+        // published Snap, so this resolves to `unsupported` for now.
+        const attempt = await snapAuthenticate({ snapId, zip321Uri: opts.snapZip321Uri });
+        const { identity } = attempt;
         setSnapStatus({ kind: "ready", snapId: identity.snapId, version: identity.snapVersion });
         // The Snap exposes no getAddress RPC, so display the seed fingerprint as the identity.
         setAddress(`snap:${identity.fingerprint.slice(0, 16)}`);
         setStatus("verifying");
-        const submission = await opts.onSnapAuth(identity);
+        const submission = await opts.onSnapAuth(identity, attempt);
         if (!submission.ok) {
           setError(submission.error);
           setStatus("error");
@@ -195,4 +211,4 @@ export function useSiwz(opts: UseSiwzOptions): UseSiwzReturn {
   };
 }
 
-export type { SnapStatus, SnapIdentity };
+export type { SnapStatus, SnapIdentity, SnapAuthAttempt };

@@ -189,7 +189,9 @@ Full version: [quickstart.md](./quickstart.md). Reference app: `apps/zecwall` (t
 
 ## I want only MetaMask snap
 
-The ChainSafe WebZjs Zcash Snap exposes a seed fingerprint and a unified viewing key. You bind them to an identity with an HMAC envelope and mint a session. One click, no QR, no on-chain fee.
+The ChainSafe WebZjs Zcash Snap exposes a seed fingerprint. SIWZ binds that to an identity with an HMAC envelope and mints a session: one click, no QR, no on-chain fee.
+
+SIWZ deliberately never requests the Snap's viewing key. A UFVK discloses the account's whole payment history, permanently and unrevocably, and receiving one is not proof of key control. A fingerprint is an attestation from MetaMask rather than a cryptographic proof, so this flow is weaker than flows A and B. It becomes a real proof once the Snap ships `signMessage` or a send RPC, which `snapAuthenticate` already probes for. See [ChainSafe/WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165).
 
 **Import:** set `enableSnap` and pass `onSnapAuth` to `<SignInWithZcash />` from `@siwz/react`. Lower-level helpers also exported: `snapConnect`, `snapGetSeedFingerprint`, `snapGetViewingKey`, `detectSnapEnvironment`, `DEFAULT_SNAP_ID`.
 
@@ -215,7 +217,7 @@ The ChainSafe WebZjs Zcash Snap exposes a seed fingerprint and a unified viewing
 />
 ```
 
-**Session glue you provide:** an envelope endpoint that HMACs `fingerprint::ufvk` with your secret, and a `CredentialsProvider({ id: "snap", ... })` that verifies the envelope and derives identity from the UFVK hash. Reference: `apps/demo/src/lib/snap-auth.ts` and the `/api/auth/snap-envelope` route.
+**Session glue you provide:** an envelope endpoint that HMACs `fingerprint::subject` with your secret, and a `CredentialsProvider({ id: "snap", ... })` that verifies the envelope and derives identity from the subject hash. The subject is `anon:<fingerprint>`, never a viewing key. Reference: `apps/demo/src/lib/snap-auth.ts` and the `/api/auth/snap-envelope` route.
 
 **Important caveat:** the published ChainSafe snap restricts which dApp origins can call it (`allowedOrigins`), so a third-party site cannot use it in production today. Works on `localhost` with MetaMask Flask, or once ChainSafe broadens the allowlist. Treat snap as a progressive enhancement; keep memo-challenge as the real path. Full story in [why-siwz.md](./why-siwz.md).
 

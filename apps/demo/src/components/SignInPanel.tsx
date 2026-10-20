@@ -165,10 +165,12 @@ function SnapPanel({ onUseDifferentWallet }: { onUseDifferentWallet?: () => void
           return { ok: true };
         }}
         onSnapAuth={async (info: SnapIdentity) => {
+          // Sign-in never reads a viewing key. The subject is derived from the seed fingerprint.
+          const subject = `anon:${info.fingerprint}`;
           const envRes = await fetch("/api/auth/snap-envelope", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ fingerprint: info.fingerprint, ufvk: info.ufvk }),
+            body: JSON.stringify({ fingerprint: info.fingerprint, ufvk: subject }),
           });
           if (!envRes.ok) {
             const j = await envRes.json().catch(() => ({}));
@@ -177,7 +179,7 @@ function SnapPanel({ onUseDifferentWallet }: { onUseDifferentWallet?: () => void
           const { envelope } = await envRes.json();
           const result = await signIn("snap", {
             fingerprint: info.fingerprint,
-            ufvk: info.ufvk,
+            ufvk: subject,
             envelope,
             redirect: false,
           });

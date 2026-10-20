@@ -90,17 +90,19 @@ function SnapFlow({ onUseDifferentWallet }: { onUseDifferentWallet: () => void }
         return { ok: true };
       }}
       onSnapAuth={async (info: SnapIdentity) => {
+        // Sign-in never reads a viewing key. The subject is derived from the seed fingerprint.
+        const subject = `anon:${info.fingerprint}`;
         const envRes = await fetch("/api/auth/snap-envelope", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ fingerprint: info.fingerprint, ufvk: info.ufvk }),
+          body: JSON.stringify({ fingerprint: info.fingerprint, ufvk: subject }),
         });
         if (!envRes.ok) {
           const j = await envRes.json().catch(() => ({}));
           return { ok: false, error: j.error ?? "envelope rejected" };
         }
         const { envelope } = await envRes.json();
-        const r = await signIn("snap", { fingerprint: info.fingerprint, ufvk: info.ufvk, envelope, redirect: false });
+        const r = await signIn("snap", { fingerprint: info.fingerprint, ufvk: subject, envelope, redirect: false });
         if (!r?.ok) return { ok: false, error: r?.error ?? "snap sign-in rejected" };
         router.refresh();
         return { ok: true };

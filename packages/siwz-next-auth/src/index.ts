@@ -7,7 +7,7 @@ import { defaultMemoEnvelope } from "./memo.js";
 
 // Local mirror of @siwz/core's saplingVerifier callback shape so the emitted
 // .d.ts stays self-contained under pnpm + bundler resolution.
-type LocalAddressType = "p2pkh" | "p2sh" | "sapling" | "orchard" | "unified";
+type LocalAddressType = "p2pkh" | "p2sh" | "sapling" | "orchard" | "unified" | "siwz-id";
 type LocalNetwork = "mainnet" | "testnet" | "regtest";
 interface LocalParsedAddress {
   raw: string;

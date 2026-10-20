@@ -14,10 +14,21 @@ export {
   detectSnapEnvironment,
   requestSnapInstall,
   snapConnect,
+  snapAuthenticate,
+  snapSignMessage,
+  snapPayMemoChallenge,
   snapGetSeedFingerprint,
   snapGetViewingKey,
   findMetaMaskProvider,
   SnapInvokeError,
   DEFAULT_SNAP_ID,
 } from "./snap.js";
-export type { SnapStatus, SnapIdentity, SnapErrorCode } from "./snap.js";
+export type {
+  SnapStatus,
+  SnapIdentity,
+  SnapErrorCode,
+  SnapConnectOptions,
+  SnapSignature,
+  SnapPayment,
+  SnapAuthAttempt,
+} from "./snap.js";

@@ -10,7 +10,7 @@ The user picks how they sign in based on their wallet's capabilities. The server
 |---|---|---|---|---|
 | **A. Signmessage paste** | `zcash-cli`, YWallet | secp256k1 sig over magic-prefixed challenge | the signature | instant |
 | **B. Memo-challenge** (default) | every shielded wallet | on-chain tx with `SIWZ:<nonce>` memo or unique amount | the tx via explorer | ~30s |
-| **C. MetaMask Snap** | MetaMask + ChainSafe Snap | permission grant + UFVK | the HMAC-signed envelope | instant |
+| **C. MetaMask Snap** | MetaMask + ChainSafe Snap | seed-fingerprint attestation (no viewing key) | the HMAC-signed envelope | instant |
 
 The `MemoSignIn` and `SignInWithZcash` components live side by side in the UI. Apps decide which to surface; some present all three. The example apps (ZBooks, comments wall) show different choices.
 

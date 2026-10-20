@@ -13,6 +13,20 @@ export {
   verifySaplingSignature,
   type VerifyOptions,
 } from "./verify.js";
+export {
+  deriveSiwzDomainKey,
+  signSiwzMessage,
+  verifySiwzDomainSignature,
+  encodeSiwzIdentity,
+  decodeSiwzIdentity,
+  isSiwzIdentity,
+  normalizeSiwzDomain,
+  siwzSigningPayload,
+  SIWZ_ID_HRP,
+  SIWZ_SEED_BYTES,
+  SIWZ_SIGNING_PREFIX,
+} from "./domain-key.js";
+export type { SiwzDomainKey } from "./domain-key.js";
 export { SiwzError } from "./errors.js";
 export {
   ZCASH_SIGNED_MESSAGE_MAGIC,
