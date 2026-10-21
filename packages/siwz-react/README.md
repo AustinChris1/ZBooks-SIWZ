@@ -189,7 +189,11 @@ switch (attempt.kind) {
 1. **`signMessage`** gives exact SIWE parity: the Snap signs the challenge, your server verifies the signature against the address, and nothing is disclosed.
 2. **A send method** lets the Snap pay the memo challenge (dust plus a nonce in the memo) so the user stays inside MetaMask instead of scanning a QR code. Your server still verifies the payment on-chain.
 
-**Current status:** the published Snap exposes neither method, so `snapAuthenticate` returns `unsupported` and you should fall back to memo-challenge or paste. It also restricts RPC to `https://webzjs.chainsafe.dev` via `endowment:rpc.allowedOrigins`, so third-party origins are rejected regardless. Both are tracked in [ChainSafe/WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165). The probe caches negative results and needs no code change on your side when either method ships.
+**Current status: the Snap path is inactive.** On 2026-10-20 a ChainSafe maintainer stated on [WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165) that the Snap is "no longer maintained by ChainSafe", so neither the origin change nor `signMessage` will land upstream. The published Snap exposes no signing or send RPC, so `snapAuthenticate` returns `unsupported`, and it restricts RPC to `https://webzjs.chainsafe.dev` via `endowment:rpc.allowedOrigins`, so third-party origins are rejected regardless.
+
+Treat `enableSnap` as dormant rather than forthcoming. The probes are kept because the Snap source is MIT-0 OR Apache-2.0 and a fork or successor could ship either method, in which case this lights up with no change here. Note that a forked Snap still needs MetaMask's allowlist review to install in stable MetaMask; it works in Flask immediately.
+
+Use the memo challenge, or domain keys once a wallet supports them.
 
 Treat Snap as a progressive enhancement. Memo-challenge works with every Zcash wallet today and has none of these constraints.
 

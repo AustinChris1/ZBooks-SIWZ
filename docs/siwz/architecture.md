@@ -10,7 +10,7 @@ The user picks how they sign in based on their wallet's capabilities. The server
 |---|---|---|---|---|
 | **A. Signmessage paste** | `zcash-cli`, YWallet | secp256k1 sig over magic-prefixed challenge | the signature | instant |
 | **B. Memo-challenge** (default) | every shielded wallet | on-chain tx with `SIWZ:<nonce>` memo or unique amount | the tx via explorer | ~30s |
-| **C. MetaMask Snap** | MetaMask + ChainSafe Snap | seed-fingerprint attestation (no viewing key) | the HMAC-signed envelope | instant |
+| **C. MetaMask Snap** (inactive) | MetaMask + ChainSafe Snap | seed-fingerprint attestation (no viewing key) | the HMAC-signed envelope | instant |
 
 The `MemoSignIn` and `SignInWithZcash` components live side by side in the UI. Apps decide which to surface; some present all three. The example apps (ZBooks, comments wall) show different choices.
 
@@ -128,3 +128,5 @@ The architecture supports several:
 4. **Self-hosted node + shielded**: for maximum privacy you can run your own zcashd or zallet and skip the light-wallet step. ~60 GB disk, multi-day sync, full sovereignty.
 
 The protocol code is identical across all four. Only the explorer wiring and the env config differ.
+
+> **Flow C is inactive.** ChainSafe stated on 2026-10-20 that the Zcash Snap is no longer maintained ([WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165)). The published Snap has no signing RPC and rejects third-party origins. The code path is kept because the Snap is MIT-0 OR Apache-2.0 and a fork could revive it, but nothing should depend on it.

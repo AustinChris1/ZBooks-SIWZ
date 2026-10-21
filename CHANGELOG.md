@@ -2,6 +2,18 @@
 
 All three packages are versioned together.
 
+## 0.3.1 (`@siwz/react` only, docs)
+
+Marks the MetaMask Snap path as inactive. On 2026-10-20 a ChainSafe maintainer
+stated on [WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165) that the
+Zcash Snap is no longer maintained, so neither third-party origin access nor
+`signMessage` will land upstream.
+
+No code change. The probes stay, because the Snap source is MIT-0 OR Apache-2.0
+and a fork could ship either method, but `enableSnap` is dormant rather than
+forthcoming and nothing should depend on it. A forked Snap would also need
+MetaMask's allowlist review to install in stable MetaMask.
+
 ## 0.3.0
 
 ### Sign-in no longer touches a viewing key

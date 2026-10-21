@@ -191,7 +191,7 @@ Full version: [quickstart.md](./quickstart.md). Reference app: `apps/zecwall` (t
 
 The ChainSafe WebZjs Zcash Snap exposes a seed fingerprint. SIWZ binds that to an identity with an HMAC envelope and mints a session: one click, no QR, no on-chain fee.
 
-SIWZ deliberately never requests the Snap's viewing key. A UFVK discloses the account's whole payment history, permanently and unrevocably, and receiving one is not proof of key control. A fingerprint is an attestation from MetaMask rather than a cryptographic proof, so this flow is weaker than flows A and B. It becomes a real proof once the Snap ships `signMessage` or a send RPC, which `snapAuthenticate` already probes for. See [ChainSafe/WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165).
+SIWZ deliberately never requests the Snap's viewing key. A UFVK discloses the account's whole payment history, permanently and unrevocably, and receiving one is not proof of key control. A fingerprint is an attestation from MetaMask rather than a cryptographic proof, so this flow is weaker than flows A and B. It becomes a real proof once the Snap ships `signMessage` or a send RPC, which `snapAuthenticate` already probes for. See [ChainSafe/WebZjs#165](https://github.com/ChainSafe/WebZjs/issues/165), where a ChainSafe maintainer confirmed on 2026-10-20 that the Snap is no longer maintained. Nothing should depend on this flow.
 
 **Import:** set `enableSnap` and pass `onSnapAuth` to `<SignInWithZcash />` from `@siwz/react`. Lower-level helpers also exported: `snapConnect`, `snapGetSeedFingerprint`, `snapGetViewingKey`, `detectSnapEnvironment`, `DEFAULT_SNAP_ID`.
 
